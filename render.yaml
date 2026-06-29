@@ -6,7 +6,7 @@ services:
     runtime: docker
     repo: ""                       # rempli auto si déployé depuis un repo Git connecté
     plan: free
-    region: frankfurt              # le plus proche de la RDC (Europe)
+    region: virginia               # us-east, co-localisé avec la base Neon (us-east-1)
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /api/ping

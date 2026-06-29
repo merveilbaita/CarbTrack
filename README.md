@@ -77,7 +77,7 @@ Daphne). Chaque position/alerte ingérée est poussée au groupe `dashboard` (re
 reconnexion auto). Le serveur tourne en ASGI/Daphne.
 
 ## Déploiement (Render + Neon, gratuit)
-1. **Neon** : créer un projet (région *eu-central / Frankfurt*), activer PostGIS
+1. **Neon** : créer un projet (région *us-east-1*, co-localisée avec Render *virginia*), activer PostGIS
    (`CREATE EXTENSION IF NOT EXISTS postgis;` dans le SQL Editor), copier la *connection string*
    (`postgresql://…?sslmode=require`).
 2. **GitHub** : pousser ce dépôt.
