@@ -76,10 +76,24 @@ Endpoints JSON staff sous `/dash-api/*` (session Django, distincts de l'API chau
 Daphne). Chaque position/alerte ingérée est poussée au groupe `dashboard` (repli polling 30 s +
 reconnexion auto). Le serveur tourne en ASGI/Daphne.
 
+## Déploiement (Render + Neon, gratuit)
+1. **Neon** : créer un projet (région *eu-central / Frankfurt*), activer PostGIS
+   (`CREATE EXTENSION IF NOT EXISTS postgis;` dans le SQL Editor), copier la *connection string*
+   (`postgresql://…?sslmode=require`).
+2. **GitHub** : pousser ce dépôt.
+3. **Render** : New → *Blueprint* → sélectionner le repo (lit `render.yaml`). Coller `DATABASE_URL`
+   (la chaîne Neon). Déployer. Render fournit l'URL HTTPS `https://carbtrack.onrender.com`.
+4. **Superuser** : Render → service → *Shell* → `python manage.py createsuperuser` (et `seed_demo` si besoin).
+5. **App mobile** : *Adresse serveur* = `carbtrack.onrender.com`, *Port* = `443`, *HTTPS* = **ON**.
+
+> Free Render : le service s'endort après 15 min d'inactivité (réveil 30-60 s). Les pings des
+> chauffeurs le gardent éveillé en journée ; le buffer offline évite toute perte. 7 $/mois supprime
+> le spin-down. Channels tourne sans Redis (couche en mémoire, 1 process Daphne).
+
 ## Phases
 1. ✅ Backend cœur (modèles, API, détection couloir, carte live polling).
 2. ✅ App Android Flutter (Appro + Suivi GPS, comptes liés au camion). E2E S24 validé.
 3. ✅ Dashboard web (carte live, éditeur de couloir Leaflet-Geoman, alertes, appros par chauffeur).
 4. ✅ Temps réel (Channels + Redis + Daphne, WebSocket push positions/alertes). *Reste : historique/replay.*
-5. ⬜ Hébergement (VPS, Nginx, HTTPS Let's Encrypt).
+5. ✅ Hébergement prêt — **Render** (backend Docker, HTTPS gratuit) + **Neon** (Postgres PostGIS). Voir `render.yaml` et la section ci-dessous.
 6. ⬜ Intégration GestionCarburantPro (corrélation prise carburant ↔ position).
