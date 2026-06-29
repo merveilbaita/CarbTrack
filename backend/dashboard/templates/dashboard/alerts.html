@@ -1,0 +1,52 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Alertes{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-xl shadow ring-1 ring-slate-200 overflow-hidden">
+  <div class="px-4 py-3 border-b flex items-center justify-between">
+    <h2 class="font-semibold">Alertes de sortie de couloir</h2>
+    <button onclick="load()" class="text-sm text-petrol hover:underline">Rafraîchir</button>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr>
+        <th class="px-4 py-2">État</th><th class="px-4 py-2">Chauffeur</th>
+        <th class="px-4 py-2">Véhicule</th><th class="px-4 py-2">Message</th>
+        <th class="px-4 py-2">Date</th><th class="px-4 py-2"></th>
+      </tr>
+    </thead>
+    <tbody id="rows" class="divide-y divide-slate-100"></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function fmt(iso){ const d=new Date(iso); return d.toLocaleString('fr-FR'); }
+  async function load() {
+    const { alerts } = await apiFetch('/dash-api/alerts');
+    const tb = document.getElementById('rows'); tb.innerHTML = '';
+    if (!alerts.length) { tb.innerHTML = '<tr><td colspan="6" class="px-4 py-6 text-slate-400">Aucune alerte.</td></tr>'; return; }
+    for (const a of alerts) {
+      const tr = document.createElement('tr');
+      tr.className = a.acked ? 'opacity-50' : '';
+      tr.innerHTML =
+        `<td class="px-4 py-2">${a.acked?'<span class="text-slate-400">Acquittée</span>':'<span class="text-red-600 font-semibold">⚠️ Ouverte</span>'}</td>`+
+        `<td class="px-4 py-2">${a.driver}</td>`+
+        `<td class="px-4 py-2">${a.vehicle||'—'}</td>`+
+        `<td class="px-4 py-2">${a.message||a.kind}</td>`+
+        `<td class="px-4 py-2 text-slate-500">${fmt(a.created_at)}</td>`+
+        `<td class="px-4 py-2 text-right"></td>`;
+      if (!a.acked) {
+        const btn = document.createElement('button');
+        btn.className = 'text-xs font-semibold text-petrol hover:underline';
+        btn.textContent = 'Acquitter';
+        btn.onclick = async () => { await apiFetch('/dash-api/alerts/'+a.id+'/ack', { method:'POST' }); load(); };
+        tr.lastElementChild.appendChild(btn);
+      }
+      tb.appendChild(tr);
+    }
+  }
+  load(); setInterval(load, 10000);
+</script>
+{% endblock %}

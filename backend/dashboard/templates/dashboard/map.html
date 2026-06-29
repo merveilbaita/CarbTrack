@@ -1,0 +1,130 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Carte live{% endblock %}
+{% block head %}
+<script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+<style>#map{height:calc(100vh - 9rem);border-radius:14px}</style>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+  <div class="lg:col-span-3">
+    <div id="map" class="shadow ring-1 ring-slate-200"></div>
+  </div>
+  <aside class="bg-white rounded-xl shadow ring-1 ring-slate-200 overflow-hidden">
+    <div class="px-4 py-3 border-b flex items-center justify-between">
+      <h2 class="font-semibold flex items-center gap-2">
+        <span id="liveDot" class="inline-block w-2.5 h-2.5 rounded-full bg-slate-300" title="Temps réel"></span>
+        Flotte
+      </h2>
+      <span id="alertBadge" class="hidden text-xs font-semibold text-white bg-red-500 rounded-full px-2 py-0.5"></span>
+    </div>
+    <ul id="list" class="divide-y divide-slate-100 text-sm max-h-[70vh] overflow-auto"></ul>
+    <p id="foot" class="px-4 py-2 text-xs text-slate-400">Connexion…</p>
+  </aside>
+</div>
+<div id="toasts" class="fixed bottom-4 right-4 space-y-2 z-[1000]"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const map = L.map('map').setView([-4.32, 15.31], 12);
+  tileLayer(map);
+  const markers = {};
+  const positions = {};        // driver_id -> dernière position
+  let openAlerts = 0;
+  const routeLayer = L.layerGroup().addTo(map);
+  let fitted = false;
+
+  function dot(off) {
+    return L.divIcon({ className: '', iconSize:[16,16], iconAnchor:[8,8],
+      html:`<div style="width:16px;height:16px;border-radius:9999px;border:2px solid #fff;
+        box-shadow:0 0 0 1px rgba(0,0,0,.25);background:${off?'#ef4444':'#22c55e'}"></div>` });
+  }
+
+  function setBadge() {
+    const b = document.getElementById('alertBadge');
+    if (openAlerts > 0) { b.textContent = openAlerts + ' alerte(s)'; b.classList.remove('hidden'); }
+    else b.classList.add('hidden');
+  }
+
+  function toast(msg) {
+    const t = document.createElement('div');
+    t.className = 'bg-red-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg';
+    t.textContent = msg;
+    document.getElementById('toasts').appendChild(t);
+    setTimeout(() => t.remove(), 6000);
+  }
+
+  function render() {
+    const list = document.getElementById('list'); list.innerHTML = '';
+    const bounds = [];
+    Object.values(positions).forEach(p => {
+      const ll = [p.lat, p.lng]; bounds.push(ll);
+      if (markers[p.driver_id]) markers[p.driver_id].setLatLng(ll).setIcon(dot(p.off_route));
+      else markers[p.driver_id] = L.marker(ll, { icon: dot(p.off_route) }).addTo(map);
+      markers[p.driver_id].bindTooltip(`${p.driver}${p.vehicle?' · '+p.vehicle:''}`+
+        (p.off_route?` ⚠️ ${Math.round(p.dist_m)} m`:''));
+      const li = document.createElement('li');
+      li.className = 'px-4 py-2 flex items-center gap-2';
+      li.innerHTML = `<span class="h-2.5 w-2.5 rounded-full ${p.off_route?'bg-red-500':'bg-green-500'}"></span>`+
+        `<span class="flex-1 truncate">${p.driver}${p.vehicle?' · '+p.vehicle:''}</span>`+
+        (p.off_route?`<span class="text-xs font-medium text-red-600">${Math.round(p.dist_m)} m</span>`:'');
+      list.appendChild(li);
+    });
+    if (!Object.keys(positions).length) list.innerHTML = '<li class="px-4 py-3 text-slate-400">Aucune position</li>';
+    if (!fitted && bounds.length) { map.fitBounds(bounds, { padding:[50,50] }); fitted = true; }
+  }
+
+  async function loadRoutes() {
+    try {
+      const { routes } = await apiFetch('/dash-api/routes');
+      routeLayer.clearLayers();
+      routes.forEach(r => {
+        routeLayer.addLayer(L.geoJSON(r.geometry, { style:{ color:'#0E4C5B', weight:3 } })
+          .bindTooltip(`${r.name} · couloir ${Math.round(r.corridor_m)} m`));
+        try {
+          const buf = turf.buffer(r.geometry, r.corridor_m, { units:'meters' });
+          routeLayer.addLayer(L.geoJSON(buf, { style:{ color:'#0E4C5B', weight:1,
+            fillColor:'#0E4C5B', fillOpacity:0.07, dashArray:'4' } }));
+        } catch(e){}
+      });
+    } catch(e){}
+  }
+
+  async function loadInitial() {
+    try {
+      const data = await apiFetch('/dash-api/latest');
+      data.positions.forEach(p => positions[p.driver_id] = p);
+      openAlerts = data.open_alerts || 0;
+      setBadge(); render();
+    } catch(e){}
+  }
+
+  // ── Temps réel (WebSocket) ────────────────────────────────────
+  function connectWS() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ws/dashboard/`);
+    const liveDot = document.getElementById('liveDot');
+    const foot = document.getElementById('foot');
+
+    ws.onopen = () => { liveDot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-green-500';
+      foot.textContent = 'Temps réel · connecté'; };
+    ws.onmessage = (e) => {
+      const m = JSON.parse(e.data);
+      if (m.kind === 'position') { positions[m.driver_id] = m; render(); }
+      else if (m.kind === 'alert') { openAlerts++; setBadge();
+        toast(`⚠️ ${m.driver}${m.vehicle?' ('+m.vehicle+')':''} — ${m.message}`); }
+    };
+    ws.onclose = () => {
+      liveDot.className = 'inline-block w-2.5 h-2.5 rounded-full bg-red-500';
+      foot.textContent = 'Reconnexion…';
+      setTimeout(connectWS, 3000);   // reconnexion auto
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  loadRoutes(); loadInitial(); connectWS();
+  // Repli : resynchronise l'état complet toutes les 30 s (au cas où le WS manque un message).
+  setInterval(loadInitial, 30000);
+</script>
+{% endblock %}

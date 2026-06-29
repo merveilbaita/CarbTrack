@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token }}">
+  <title>CarbTrack — {% block title %}Dashboard{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = { theme: { extend: { colors: {
+      petrol: '#0E4C5B', petroldark: '#0a3a45', amber: '#F4A300' } } } };
+  </script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  {% block head %}{% endblock %}
+  <style>[x-cloak]{display:none}</style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800">
+  <header class="bg-petrol text-white shadow">
+    <div class="max-w-7xl mx-auto px-4 flex items-center gap-1 h-14">
+      <a href="{% url 'dashboard-map' %}" class="font-bold text-lg mr-4 flex items-center gap-2">
+        <span class="inline-block w-2.5 h-2.5 rounded-full bg-amber"></span>CarbTrack
+      </a>
+      <nav class="flex gap-1 text-sm">
+        <a href="{% url 'dashboard-map' %}"     class="px-3 py-1.5 rounded-lg {% if active == 'map' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Carte</a>
+        <a href="{% url 'dashboard-routes' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'routes' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Itinéraires</a>
+        <a href="{% url 'dashboard-alerts' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'alerts' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Alertes</a>
+        <a href="{% url 'dashboard-appros' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'appros' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Appros</a>
+      </nav>
+      <div class="ml-auto flex items-center gap-3 text-sm">
+        <span class="opacity-80">{{ request.user.username }}</span>
+        <a href="/admin/logout/" class="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20">Déconnexion</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="max-w-7xl mx-auto p-4">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    const CSRF = document.querySelector('meta[name=csrf-token]').content;
+    async function apiFetch(url, opts = {}) {
+      const o = Object.assign({ headers: {} }, opts);
+      o.headers['X-CSRFToken'] = CSRF;
+      if (o.body) o.headers['Content-Type'] = 'application/json';
+      const r = await fetch(url, o);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }
+    function tileLayer(map) {
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+        { maxZoom: 19, attribution: '&copy; OpenStreetMap' }).addTo(map);
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

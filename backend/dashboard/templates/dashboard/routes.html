@@ -1,0 +1,95 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Itinéraires{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css" />
+<style>#map{height:70vh;border-radius:14px}</style>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+  <div class="lg:col-span-3">
+    <div id="map" class="shadow ring-1 ring-slate-200"></div>
+    <p class="text-xs text-slate-500 mt-2">Cliquez l'outil ligne (haut-gauche de la carte) pour tracer l'itinéraire, double-clic pour terminer.</p>
+  </div>
+  <aside class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-4 space-y-4">
+    <div>
+      <h2 class="font-semibold mb-2">Nouvel itinéraire</h2>
+      <label class="block text-sm">Nom
+        <input id="rname" class="mt-1 w-full border rounded-lg px-3 py-2" placeholder="Dépôt → Chantier A">
+      </label>
+      <label class="block text-sm mt-3">Largeur du couloir (m)
+        <input id="rwidth" type="number" value="100" class="mt-1 w-full border rounded-lg px-3 py-2">
+      </label>
+      <button id="saveBtn" disabled
+        class="mt-3 w-full bg-petrol text-white rounded-lg py-2 font-semibold disabled:opacity-40">
+        Enregistrer le tracé
+      </button>
+      <p id="hint" class="text-xs text-slate-400 mt-2">Tracez d'abord une ligne sur la carte.</p>
+    </div>
+    <div class="border-t pt-3">
+      <h2 class="font-semibold mb-2">Itinéraires existants</h2>
+      <ul id="rlist" class="space-y-2 text-sm"></ul>
+    </div>
+  </aside>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
+<script>
+  const map = L.map('map').setView([-4.32, 15.31], 12);
+  tileLayer(map);
+  map.pm.addControls({ position: 'topleft', drawMarker:false, drawCircle:false,
+    drawCircleMarker:false, drawRectangle:false, drawPolygon:false, drawText:false,
+    cutPolygon:false, rotateMode:false });
+
+  const existing = L.layerGroup().addTo(map);
+  let drawn = null;
+  const saveBtn = document.getElementById('saveBtn');
+  const hint = document.getElementById('hint');
+
+  map.on('pm:create', e => {
+    if (drawn) map.removeLayer(drawn);
+    drawn = e.layer;
+    saveBtn.disabled = false;
+    hint.textContent = 'Tracé prêt. Donnez un nom puis enregistrez.';
+  });
+
+  saveBtn.addEventListener('click', async () => {
+    if (!drawn) return;
+    const gj = drawn.toGeoJSON();
+    saveBtn.disabled = true;
+    try {
+      await apiFetch('/dash-api/routes', { method:'POST', body: JSON.stringify({
+        name: document.getElementById('rname').value || 'Itinéraire',
+        corridor_m: parseFloat(document.getElementById('rwidth').value) || 100,
+        geometry: gj.geometry,
+      })});
+      map.removeLayer(drawn); drawn = null;
+      document.getElementById('rname').value = '';
+      hint.textContent = 'Enregistré ✓';
+      loadRoutes();
+    } catch (e) { hint.textContent = 'Erreur : ' + e.message; saveBtn.disabled = false; }
+  });
+
+  async function loadRoutes() {
+    const { routes } = await apiFetch('/dash-api/routes');
+    existing.clearLayers();
+    const ul = document.getElementById('rlist'); ul.innerHTML = '';
+    routes.forEach(r => {
+      existing.addLayer(L.geoJSON(r.geometry, { style:{ color:'#F4A300', weight:3 } })
+        .bindTooltip(`${r.name} · ${Math.round(r.corridor_m)} m`));
+      const li = document.createElement('li');
+      li.className = 'flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2';
+      li.innerHTML = `<span>${r.name}<span class="text-slate-400"> · ${Math.round(r.corridor_m)} m</span></span>`;
+      const del = document.createElement('button');
+      del.className = 'text-red-500 hover:text-red-700 text-xs font-semibold';
+      del.textContent = 'Supprimer';
+      del.onclick = async () => { await apiFetch('/dash-api/routes/'+r.id, { method:'DELETE' }); loadRoutes(); };
+      li.appendChild(del); ul.appendChild(li);
+    });
+    if (!routes.length) ul.innerHTML = '<li class="text-slate-400">Aucun itinéraire.</li>';
+  }
+  loadRoutes();
+</script>
+{% endblock %}

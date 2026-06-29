@@ -1,0 +1,26 @@
+# Blueprint Render — déploie le backend CarbTrack (Django/Daphne) depuis le Dockerfile.
+# La base de données est Neon (PostGIS) : renseignez DATABASE_URL dans le dashboard Render.
+services:
+  - type: web
+    name: carbtrack
+    runtime: docker
+    repo: ""                       # rempli auto si déployé depuis un repo Git connecté
+    plan: free
+    region: frankfurt              # le plus proche de la RDC (Europe)
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /api/ping
+    dockerCommand: >
+      sh -c "python manage.py migrate &&
+             python manage.py collectstatic --noinput &&
+             daphne -b 0.0.0.0 -p $PORT carbtrack.asgi:application"
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "0"
+      - key: DJANGO_SECRET_KEY
+        generateValue: true        # Render génère une clé secrète
+      - key: DATABASE_URL
+        sync: false                # ⚠️ à coller : la chaîne de connexion Neon (sslmode=require)
+      - key: DJANGO_SSL_REDIRECT
+        value: "1"
+      # REDIS_URL non défini → Channels utilise la couche en mémoire (un seul process).

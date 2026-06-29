@@ -1,0 +1,57 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Appros{% endblock %}
+
+{% block content %}
+<div class="bg-white rounded-xl shadow ring-1 ring-slate-200 overflow-hidden">
+  <div class="px-4 py-3 border-b flex items-center gap-3">
+    <h2 class="font-semibold">Approvisionnements</h2>
+    <select id="driverFilter" class="ml-auto border rounded-lg px-3 py-1.5 text-sm">
+      <option value="">Tous les chauffeurs</option>
+      {% for d in drivers %}<option value="{{ d.id }}">{{ d.name }}</option>{% endfor %}
+    </select>
+  </div>
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr>
+        <th class="px-4 py-2">Date</th><th class="px-4 py-2">Chauffeur</th>
+        <th class="px-4 py-2">Véhicule</th><th class="px-4 py-2 text-right">Quantité</th>
+        <th class="px-4 py-2 text-right">Index préc.</th><th class="px-4 py-2 text-right">Index act.</th>
+        <th class="px-4 py-2 text-right">Δ</th>
+      </tr>
+    </thead>
+    <tbody id="rows" class="divide-y divide-slate-100"></tbody>
+  </table>
+  <div class="px-4 py-2 text-xs text-slate-400 border-t" id="summary"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const sel = document.getElementById('driverFilter');
+  sel.addEventListener('change', load);
+
+  async function load() {
+    const q = sel.value ? ('?driver=' + sel.value) : '';
+    const { appros } = await apiFetch('/dash-api/appros' + q);
+    const tb = document.getElementById('rows'); tb.innerHTML = '';
+    let total = 0;
+    if (!appros.length) { tb.innerHTML = '<tr><td colspan="7" class="px-4 py-6 text-slate-400">Aucun appro.</td></tr>'; }
+    for (const a of appros) {
+      total += a.qte_litres || 0;
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td class="px-4 py-2">${a.date}</td>`+
+        `<td class="px-4 py-2">${a.driver}</td>`+
+        `<td class="px-4 py-2">${a.vehicle||'—'}</td>`+
+        `<td class="px-4 py-2 text-right font-medium">${(a.qte_litres||0).toFixed(1)} L</td>`+
+        `<td class="px-4 py-2 text-right text-slate-500">${a.index_precedent}</td>`+
+        `<td class="px-4 py-2 text-right text-slate-500">${a.index_actuel}</td>`+
+        `<td class="px-4 py-2 text-right">${Math.round(a.difference)}</td>`;
+      tb.appendChild(tr);
+    }
+    document.getElementById('summary').textContent =
+      `${appros.length} appro(s) · total ${total.toFixed(1)} L`;
+  }
+  load();
+</script>
+{% endblock %}
