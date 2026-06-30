@@ -37,8 +37,10 @@
 {% block scripts %}
 <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
 <script>
-  const map = L.map('map').setView([-4.32, 15.31], 12);
+  const map = L.map('map').setView([0.5167, 25.2000], 13);  // Kisangani par défaut
   tileLayer(map);
+  // Centre la carte sur la position réelle de l'utilisateur (sinon reste sur Kisangani).
+  map.locate({ setView: true, maxZoom: 15 });
   map.pm.addControls({ position: 'topleft', drawMarker:false, drawCircle:false,
     drawCircleMarker:false, drawRectangle:false, drawPolygon:false, drawText:false,
     cutPolygon:false, rotateMode:false });
