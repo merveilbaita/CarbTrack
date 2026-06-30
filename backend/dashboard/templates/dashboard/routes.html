@@ -37,10 +37,13 @@
 {% block scripts %}
 <script src="https://unpkg.com/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
 <script>
-  const map = L.map('map').setView([0.5167, 25.2000], 13);  // Kisangani par défaut
+  // Station carburant à Kisangani (départ habituel des camions) — vue par défaut.
+  const FUEL_SPOT = [0.500977, 25.293037];
+  const map = L.map('map').setView(FUEL_SPOT, 16);
   tileLayer(map);
-  // Centre la carte sur la position réelle de l'utilisateur (sinon reste sur Kisangani).
-  map.locate({ setView: true, maxZoom: 15 });
+  L.marker(FUEL_SPOT, { icon: L.divIcon({ className:'', iconSize:[30,30], iconAnchor:[15,15],
+    html:'<div style="font-size:24px;line-height:30px;text-align:center">⛽</div>' }) })
+    .addTo(map).bindTooltip('Station carburant — départ habituel des camions');
   map.pm.addControls({ position: 'topleft', drawMarker:false, drawCircle:false,
     drawCircleMarker:false, drawRectangle:false, drawPolygon:false, drawText:false,
     cutPolygon:false, rotateMode:false });
