@@ -9,10 +9,8 @@ services:
     dockerfilePath: ./backend/Dockerfile
     dockerContext: ./backend
     healthCheckPath: /api/ping
-    dockerCommand: >
-      sh -c "python manage.py migrate &&
-             python manage.py collectstatic --noinput &&
-             daphne -b 0.0.0.0 -p $PORT carbtrack.asgi:application"
+    # La commande de démarrage est dans backend/render-start.sh (CMD du Dockerfile),
+    # pour éviter les problèmes de guillemets dans le YAML.
     envVars:
       - key: DJANGO_DEBUG
         value: "0"

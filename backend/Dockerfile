@@ -16,6 +16,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Collecte des fichiers statiques (admin) au build → démarrages rapides en prod.
+RUN python manage.py collectstatic --noinput
+
 EXPOSE 8000
 
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+# Prod (Render) : script de démarrage = migrations + serveur ASGI Daphne.
+# (En local, docker-compose surcharge cette commande.)
+CMD ["sh", "render-start.sh"]
