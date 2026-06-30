@@ -8,7 +8,7 @@ from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
-from fleet.models import Alert, Appro, Driver, Position, Route
+from fleet.models import Alert, Appro, Assignment, Driver, Position, Route
 
 
 # ── Pages ───────────────────────────────────────────────────────────────────
@@ -20,7 +20,8 @@ def map_view(request):
 
 @login_required
 def routes_view(request):
-    return render(request, "dashboard/routes.html", {"active": "routes"})
+    drivers = list(Driver.objects.filter(active=True).order_by("name").values("id", "name"))
+    return render(request, "dashboard/routes.html", {"active": "routes", "drivers": drivers})
 
 
 @login_required
@@ -68,12 +69,21 @@ def api_routes(request):
     if request.method == "GET":
         routes = []
         for r in Route.objects.all().order_by("name"):
+            assigned = list(
+                Assignment.objects.filter(route=r, end_at__isnull=True)
+                .select_related("driver")
+                .values("driver_id", "driver__name")
+            )
             routes.append({
                 "id": r.id,
                 "name": r.name,
                 "corridor_m": r.corridor_m,
                 "active": r.active,
                 "geometry": json.loads(r.geom.geojson),
+                "assigned": [
+                    {"driver_id": a["driver_id"], "driver": a["driver__name"]}
+                    for a in assigned
+                ],
             })
         return JsonResponse({"routes": routes})
 
@@ -97,6 +107,34 @@ def api_routes(request):
 def api_route_delete(request, route_id):
     get_object_or_404(Route, pk=route_id).delete()
     return JsonResponse({"status": "deleted"})
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_route_assign(request, route_id):
+    """Assigne un chauffeur à un itinéraire (remplace son affectation active)."""
+    route = get_object_or_404(Route, pk=route_id)
+    data = json.loads(request.body or "{}")
+    driver = get_object_or_404(Driver, pk=data.get("driver_id"))
+    # Une seule affectation active par chauffeur : on clôt les précédentes.
+    Assignment.objects.filter(driver=driver, end_at__isnull=True).update(
+        end_at=timezone.now()
+    )
+    Assignment.objects.create(
+        driver=driver, vehicle=driver.vehicle, route=route, start_at=timezone.now()
+    )
+    return JsonResponse({"status": "assigned", "driver": driver.name})
+
+
+@login_required
+@require_http_methods(["POST"])
+def api_route_unassign(request, route_id):
+    """Retire l'affectation active d'un chauffeur sur cet itinéraire."""
+    data = json.loads(request.body or "{}")
+    Assignment.objects.filter(
+        route_id=route_id, driver_id=data.get("driver_id"), end_at__isnull=True
+    ).update(end_at=timezone.now())
+    return JsonResponse({"status": "unassigned"})
 
 
 @login_required

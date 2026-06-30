@@ -28,10 +28,11 @@
     </div>
     <div class="border-t pt-3">
       <h2 class="font-semibold mb-2">Itinéraires existants</h2>
-      <ul id="rlist" class="space-y-2 text-sm"></ul>
+      <ul id="rlist" class="space-y-3 text-sm"></ul>
     </div>
   </aside>
 </div>
+{{ drivers|json_script:"drivers-data" }}
 {% endblock %}
 
 {% block scripts %}
@@ -77,23 +78,84 @@
     } catch (e) { hint.textContent = 'Erreur : ' + e.message; saveBtn.disabled = false; }
   });
 
+  const DRIVERS = JSON.parse(document.getElementById('drivers-data').textContent);
+
+  function driverSelect() {
+    const sel = document.createElement('select');
+    sel.className = 'flex-1 border rounded-lg px-2 py-1 text-sm';
+    sel.innerHTML = '<option value="">— choisir un chauffeur —</option>' +
+      DRIVERS.map(d => `<option value="${d.id}">${d.name}</option>`).join('');
+    return sel;
+  }
+
   async function loadRoutes() {
     const { routes } = await apiFetch('/dash-api/routes');
     existing.clearLayers();
     const ul = document.getElementById('rlist'); ul.innerHTML = '';
+    if (!routes.length) { ul.innerHTML = '<li class="text-slate-400">Aucun itinéraire.</li>'; return; }
+
     routes.forEach(r => {
       existing.addLayer(L.geoJSON(r.geometry, { style:{ color:'#F4A300', weight:3 } })
         .bindTooltip(`${r.name} · ${Math.round(r.corridor_m)} m`));
+
       const li = document.createElement('li');
-      li.className = 'flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2';
-      li.innerHTML = `<span>${r.name}<span class="text-slate-400"> · ${Math.round(r.corridor_m)} m</span></span>`;
+      li.className = 'bg-slate-50 rounded-lg px-3 py-2 space-y-2';
+
+      // Titre + supprimer
+      const head = document.createElement('div');
+      head.className = 'flex items-center justify-between';
+      head.innerHTML = `<span class="font-medium">${r.name}<span class="text-slate-400 font-normal"> · ${Math.round(r.corridor_m)} m</span></span>`;
       const del = document.createElement('button');
       del.className = 'text-red-500 hover:text-red-700 text-xs font-semibold';
       del.textContent = 'Supprimer';
-      del.onclick = async () => { await apiFetch('/dash-api/routes/'+r.id, { method:'DELETE' }); loadRoutes(); };
-      li.appendChild(del); ul.appendChild(li);
+      del.onclick = async () => {
+        if (confirm('Supprimer cet itinéraire ?')) {
+          await apiFetch('/dash-api/routes/' + r.id, { method: 'DELETE' }); loadRoutes();
+        }
+      };
+      head.appendChild(del);
+      li.appendChild(head);
+
+      // Chauffeurs assignés (chips avec ×)
+      const chips = document.createElement('div');
+      chips.className = 'flex flex-wrap gap-1';
+      if (r.assigned.length) {
+        r.assigned.forEach(a => {
+          const chip = document.createElement('span');
+          chip.className = 'inline-flex items-center gap-1 bg-petrol/10 text-petrol rounded-full px-2 py-0.5 text-xs';
+          chip.innerHTML = `<span>👤 ${a.driver}</span>`;
+          const x = document.createElement('button');
+          x.className = 'font-bold hover:text-red-600'; x.textContent = '×'; x.title = 'Retirer';
+          x.onclick = async () => {
+            await apiFetch('/dash-api/routes/' + r.id + '/unassign',
+              { method: 'POST', body: JSON.stringify({ driver_id: a.driver_id }) });
+            loadRoutes();
+          };
+          chip.appendChild(x); chips.appendChild(chip);
+        });
+      } else {
+        chips.innerHTML = '<span class="text-xs text-slate-400">Aucun chauffeur assigné</span>';
+      }
+      li.appendChild(chips);
+
+      // Assigner : select + bouton
+      const row = document.createElement('div');
+      row.className = 'flex gap-2';
+      const sel = driverSelect();
+      const btn = document.createElement('button');
+      btn.className = 'bg-petrol text-white rounded-lg px-3 py-1 text-xs font-semibold whitespace-nowrap';
+      btn.textContent = 'Assigner';
+      btn.onclick = async () => {
+        if (!sel.value) return;
+        await apiFetch('/dash-api/routes/' + r.id + '/assign',
+          { method: 'POST', body: JSON.stringify({ driver_id: parseInt(sel.value) }) });
+        loadRoutes();
+      };
+      row.appendChild(sel); row.appendChild(btn);
+      li.appendChild(row);
+
+      ul.appendChild(li);
     });
-    if (!routes.length) ul.innerHTML = '<li class="text-slate-400">Aucun itinéraire.</li>';
   }
   loadRoutes();
 </script>
