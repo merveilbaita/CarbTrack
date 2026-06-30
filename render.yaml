@@ -4,7 +4,6 @@ services:
   - type: web
     name: carbtrack
     runtime: docker
-    repo: ""                       # rempli auto si déployé depuis un repo Git connecté
     plan: free
     region: virginia               # us-east, co-localisé avec la base Neon (us-east-1)
     dockerfilePath: ./backend/Dockerfile
