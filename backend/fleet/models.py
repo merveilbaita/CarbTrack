@@ -29,6 +29,13 @@ class Driver(models.Model):
         "Vehicle", null=True, blank=True, on_delete=models.SET_NULL,
         related_name="drivers", verbose_name="camion assigné",
     )
+    ROLE_DRIVER = "driver"
+    ROLE_SUPERVISOR = "supervisor"
+    ROLE_CHOICES = [
+        (ROLE_DRIVER, "Chauffeur / opérateur"),
+        (ROLE_SUPERVISOR, "Superviseur (admin app)"),
+    ]
+    role = models.CharField("rôle", max_length=16, choices=ROLE_CHOICES, default=ROLE_DRIVER)
     active = models.BooleanField("actif", default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -52,6 +59,10 @@ class Driver(models.Model):
     @property
     def is_authenticated(self) -> bool:
         return True
+
+    @property
+    def is_supervisor(self) -> bool:
+        return self.role == self.ROLE_SUPERVISOR
 
 
 class Vehicle(models.Model):

@@ -7,7 +7,7 @@
 (*) `latest` est ouvert en v1 pour le polling du dashboard interne ; à sécuriser
     (session staff / token dashboard) avant exposition publique.
 """
-from django.contrib.gis.geos import Point
+from django.contrib.gis.geos import LineString, Point
 from django.db.models import Max
 from django.utils.dateparse import parse_date, parse_datetime
 from django.utils import timezone
@@ -21,7 +21,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .geo import evaluate_point
-from .models import Alert, Appro, Assignment, Driver, Position, Vehicle
+from .models import Alert, Appro, Assignment, Driver, Position, Route, Vehicle
 from .realtime import broadcast_alert, broadcast_position
 
 
@@ -57,6 +57,7 @@ def login(request):
             "id": driver.id,
             "name": driver.name,
             "phone": driver.phone,
+            "role": driver.role,
             "vehicle": _vehicle_payload(driver.vehicle),
         },
     })
@@ -201,6 +202,44 @@ def positions_latest(request):
             "dist_m": pos.dist_m,
         }
     return Response({"positions": list(latest.values())})
+
+
+# ── Enregistrement d'itinéraire (superviseur, depuis l'app) ────────────────
+
+@api_view(["POST"])
+def create_route(request):
+    """Crée un itinéraire à partir d'un tracé GPS enregistré (superviseur only)."""
+    driver = request.user
+    if not getattr(driver, "is_supervisor", False):
+        return Response({"detail": "Réservé aux superviseurs."}, status=403)
+
+    points = request.data.get("points") or []
+    if len(points) < 2:
+        return Response({"detail": "Trajet trop court (2 points minimum)."}, status=400)
+
+    try:
+        coords = [(float(p["lng"]), float(p["lat"])) for p in points]
+    except (KeyError, TypeError, ValueError):
+        return Response({"detail": "Points invalides."}, status=400)
+
+    line = LineString(coords, srid=4326)
+    # Simplifie le tracé (réduit les milliers de points GPS) ~5 m de tolérance.
+    simplified = line.simplify(0.00005, preserve_topology=True)
+    if simplified is None or simplified.geom_type != "LineString" or len(simplified.coords) < 2:
+        simplified = line
+    simplified.srid = 4326
+
+    route = Route.objects.create(
+        name=request.data.get("name") or "Itinéraire enregistré",
+        geom=simplified,
+        corridor_m=float(request.data.get("corridor_m") or 200),
+    )
+    return Response({
+        "id": route.id,
+        "status": "ok",
+        "points_bruts": len(coords),
+        "points_simplifies": len(simplified.coords),
+    })
 
 
 # ── Approvisionnements (outil principal de l'app chauffeur) ─────────────────

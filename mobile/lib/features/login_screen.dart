@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/api_client.dart';
 import '../core/config_store.dart';
 import '../core/server_config.dart';
+import 'admin/admin_shell.dart';
 import 'shell/main_shell.dart';
 
 /// Connexion du chauffeur : adresse du serveur + téléphone + PIN.
@@ -58,6 +59,7 @@ class _LoginScreenState extends State<LoginScreen> {
         token: token,
         secure: _secure,
         driverName: '${driver['name'] ?? ''}',
+        role: '${driver['role'] ?? 'driver'}',
         vehicleId: (vehicle?['id'] as num?)?.toInt(),
         vehicleLabel: vehicle == null
             ? ''
@@ -68,7 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
       Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (_) => MainShell(config: config)),
+        MaterialPageRoute(
+          builder: (_) => config.isSupervisor
+              ? AdminShell(config: config)
+              : MainShell(config: config),
+        ),
       );
     } on ApiException catch (e) {
       setState(() => _error = e.message);

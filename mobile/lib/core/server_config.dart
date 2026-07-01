@@ -8,6 +8,7 @@ class ServerConfig {
     required this.token,
     this.secure = false,
     this.driverName = '',
+    this.role = 'driver',
     this.vehicleId,
     this.vehicleLabel = '',
   });
@@ -23,6 +24,10 @@ class ServerConfig {
 
   final String driverName;
 
+  /// Rôle du compte : 'driver' (interface chauffeur) ou 'supervisor' (interface admin).
+  final String role;
+  bool get isSupervisor => role == 'supervisor';
+
   /// Camion assigné au compte (renvoyé par le login). null = aucun camion lié.
   final int? vehicleId;
   final String vehicleLabel;
@@ -35,6 +40,7 @@ class ServerConfig {
         'token': token,
         'secure': secure,
         'driverName': driverName,
+        'role': role,
         'vehicleId': vehicleId,
         'vehicleLabel': vehicleLabel,
       };
@@ -45,6 +51,7 @@ class ServerConfig {
         token: j['token'] as String? ?? '',
         secure: j['secure'] as bool? ?? false,
         driverName: j['driverName'] as String? ?? '',
+        role: j['role'] as String? ?? 'driver',
         vehicleId: (j['vehicleId'] as num?)?.toInt(),
         vehicleLabel: j['vehicleLabel'] as String? ?? '',
       );
@@ -60,6 +67,7 @@ class ServerConfig {
         token: token ?? this.token,
         secure: secure,
         driverName: driverName ?? this.driverName,
+        role: role,
         vehicleId: vehicleId,
         vehicleLabel: vehicleLabel,
       );

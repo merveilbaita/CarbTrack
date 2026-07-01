@@ -3,6 +3,7 @@ import 'package:flutter_foreground_task/flutter_foreground_task.dart';
 
 import 'core/config_store.dart';
 import 'core/server_config.dart';
+import 'features/admin/admin_shell.dart';
 import 'features/login_screen.dart';
 import 'features/shell/main_shell.dart';
 import 'tracking/tracking_service.dart';
@@ -69,7 +70,9 @@ class _GateState extends State<_Gate> {
         }
         final config = snap.data;
         if (config != null && config.token.isNotEmpty) {
-          return MainShell(config: config);
+          return config.isSupervisor
+              ? AdminShell(config: config)
+              : MainShell(config: config);
         }
         return const LoginScreen();
       },

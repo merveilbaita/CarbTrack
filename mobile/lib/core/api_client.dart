@@ -114,6 +114,24 @@ class CarbTrackApi {
         .toList();
   }
 
+  /// `POST /api/routes` — crée un itinéraire depuis un tracé enregistré (superviseur).
+  Future<Map<String, dynamic>> postRoute({
+    required String name,
+    required double corridorM,
+    required List<Map<String, double>> points,
+  }) async {
+    final r = await _dio.post('/api/routes', data: {
+      'name': name,
+      'corridor_m': corridorM,
+      'points': points,
+    });
+    if ((r.statusCode ?? 0) == 403) {
+      throw ApiException('Réservé aux superviseurs.', statusCode: 403);
+    }
+    _ensure(r);
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
   /// `GET /api/appros/recent` — derniers appros du chauffeur.
   Future<List<Map<String, dynamic>>> getRecentAppros() async {
     final r = await _dio.get('/api/appros/recent');

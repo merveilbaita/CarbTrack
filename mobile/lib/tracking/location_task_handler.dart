@@ -21,12 +21,14 @@ class LocationTaskHandler extends TaskHandler {
 
   String? _baseUrl;
   String? _token;
+  String _mode = 'track'; // 'track' (suivi) ou 'record' (enregistrement itinéraire)
   bool _busy = false;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     _baseUrl = await FlutterForegroundTask.getData<String>(key: 'baseUrl');
     _token = await FlutterForegroundTask.getData<String>(key: 'token');
+    _mode = await FlutterForegroundTask.getData<String>(key: 'mode') ?? 'track';
     await _buffer.open();
   }
 
@@ -39,22 +41,43 @@ class LocationTaskHandler extends TaskHandler {
     if (_busy) return;
     _busy = true;
     try {
-      await _capture();
-      await _flush();
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 12),
+        ),
+      );
+      if (_mode == 'record') {
+        await _record(pos);
+      } else {
+        await _capture(pos);
+        await _flush();
+      }
     } catch (_) {
-      // Silencieux : on réessaiera au prochain tick (les pings sont persistés).
+      // Silencieux : on réessaiera au prochain tick (les points sont persistés).
     } finally {
       _busy = false;
     }
   }
 
-  Future<void> _capture() async {
-    final pos = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 12),
-      ),
+  /// Mode enregistrement : accumule le point du tracé et pousse le compteur à l'UI.
+  Future<void> _record(Position pos) async {
+    await _buffer.insertRoutePoint(
+        pos.latitude, pos.longitude, pos.timestamp.toUtc().toIso8601String());
+    final count = await _buffer.routePointCount();
+    FlutterForegroundTask.updateService(
+      notificationTitle: 'Enregistrement d\'itinéraire',
+      notificationText: '$count point(s) · trajet en cours…',
     );
+    FlutterForegroundTask.sendDataToMain(jsonEncode({
+      'record': true,
+      'points': count,
+      'lat': pos.latitude,
+      'lng': pos.longitude,
+    }));
+  }
+
+  Future<void> _capture(Position pos) async {
     await _buffer.insert({
       'client_id': _uuid.v4(),
       'lat': pos.latitude,
