@@ -1,0 +1,168 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Historique{% endblock %}
+{% block head %}
+<style>#map{height:56vh;border-radius:14px}</style>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-4">
+  <!-- Sélection -->
+  <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-4 flex flex-wrap items-end gap-3">
+    <label class="text-sm">Chauffeur / véhicule
+      <select id="driver" class="mt-1 block border rounded-lg px-3 py-2 min-w-56"></select>
+    </label>
+    <label class="text-sm">Date
+      <input id="date" type="date" class="mt-1 block border rounded-lg px-3 py-2">
+    </label>
+    <button id="loadBtn" class="bg-petrol text-white rounded-lg px-4 py-2 font-semibold">Afficher le trajet</button>
+    <span id="status" class="text-sm text-slate-400"></span>
+    <span class="ml-auto text-xs text-slate-400">
+      Couleur du tracé : <span class="text-green-600 font-semibold">&lt; 40</span> ·
+      <span class="text-amber font-semibold">40–60</span> ·
+      <span class="text-red-600 font-semibold">&gt; 60 km/h</span>
+    </span>
+  </div>
+
+  <!-- Stats du trajet -->
+  <div id="stats" class="hidden grid grid-cols-2 md:grid-cols-6 gap-3 text-center">
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-3">
+      <div id="s-km" class="text-2xl font-bold text-petrol">–</div><div class="text-xs text-slate-500">Distance (km)</div></div>
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-3">
+      <div id="s-drive" class="text-2xl font-bold text-petrol">–</div><div class="text-xs text-slate-500">Conduite</div></div>
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-3">
+      <div id="s-first" class="text-2xl font-bold text-petrol">–</div><div class="text-xs text-slate-500">Premier signal</div></div>
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-3">
+      <div id="s-last" class="text-2xl font-bold text-petrol">–</div><div class="text-xs text-slate-500">Dernier signal</div></div>
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-3">
+      <div id="s-stops" class="text-2xl font-bold text-petrol">–</div><div class="text-xs text-slate-500">Arrêts</div></div>
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-3">
+      <div id="s-vmax" class="text-2xl font-bold text-petrol">–</div><div class="text-xs text-slate-500">V. max (km/h)</div></div>
+  </div>
+
+  <div id="map" class="shadow ring-1 ring-slate-200"></div>
+
+  <!-- Activité du jour, tous véhicules -->
+  <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-4">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="font-semibold">Activité du jour — tous les véhicules</h2>
+      <a id="csvBtn" href="#" class="text-sm bg-slate-100 hover:bg-slate-200 rounded-lg px-3 py-1.5 font-semibold">⬇ Export CSV</a>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead><tr class="text-left text-slate-500 border-b">
+          <th class="py-2 pr-3">Chauffeur</th><th class="pr-3">Véhicule</th>
+          <th class="pr-3 text-right">Distance (km)</th><th class="pr-3 text-right">Conduite</th>
+          <th class="pr-3">Premier / dernier signal</th><th class="pr-3 text-right">Arrêts</th>
+          <th class="pr-3 text-right">V. max</th><th class="text-right">V. moy</th>
+        </tr></thead>
+        <tbody id="daily"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{{ drivers|json_script:"drivers-data" }}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const DRIVERS = JSON.parse(document.getElementById('drivers-data').textContent);
+  const FUEL_SPOT = [0.5019144, 25.2930084];
+  const map = L.map('map').setView(FUEL_SPOT, 13);
+  tileLayer(map);
+  const trackLayer = L.layerGroup().addTo(map);
+
+  const sel = document.getElementById('driver');
+  sel.innerHTML = DRIVERS.map(d =>
+    `<option value="${d.id}">${d.name}${d.vehicle ? ' — ' + d.vehicle : ''}</option>`).join('');
+  const dateInput = document.getElementById('date');
+  dateInput.value = new Date().toISOString().slice(0, 10);
+
+  function fmtTime(iso) { return iso ? iso.slice(11, 16) : '–'; }
+  function fmtDur(min) {
+    if (!min) return '0 min';
+    return min >= 60 ? `${Math.floor(min/60)} h ${String(min%60).padStart(2,'0')}` : `${min} min`;
+  }
+  function speedColor(kmh) { return kmh > 60 ? '#dc2626' : kmh >= 40 ? '#F4A300' : '#16a34a'; }
+
+  async function loadTrack() {
+    const status = document.getElementById('status');
+    status.textContent = 'Chargement…';
+    trackLayer.clearLayers();
+    try {
+      const s = await apiFetch(`/dash-api/track?driver=${sel.value}&date=${dateInput.value}`);
+      document.getElementById('stats').classList.remove('hidden');
+      document.getElementById('s-km').textContent = s.distance_km;
+      document.getElementById('s-drive').textContent = fmtDur(s.driving_min);
+      document.getElementById('s-first').textContent = fmtTime(s.first_ts);
+      document.getElementById('s-last').textContent = fmtTime(s.last_ts);
+      document.getElementById('s-stops').textContent = s.stops.length;
+      document.getElementById('s-vmax').textContent = s.max_kmh;
+
+      if (!s.points.length) { status.textContent = 'Aucune position ce jour-là.'; return; }
+      status.textContent = `${s.ping_count} positions`;
+
+      // Polyligne colorée par vitesse : on regroupe les tronçons de même couleur.
+      let run = [s.points[0]], runColor = speedColor(s.points[0].kmh);
+      const flush = () => {
+        if (run.length > 1)
+          trackLayer.addLayer(L.polyline(run.map(p => [p.lat, p.lng]),
+            { color: runColor, weight: 4, opacity: .85 }));
+      };
+      for (let i = 1; i < s.points.length; i++) {
+        const p = s.points[i], c = speedColor(p.kmh);
+        run.push(p);
+        if (c !== runColor) { flush(); run = [p]; runColor = c; }
+      }
+      flush();
+
+      // Départ / arrivée
+      const first = s.points[0], last = s.points[s.points.length - 1];
+      const dot = (txt) => L.divIcon({ className:'', iconSize:[26,26], iconAnchor:[13,13],
+        html:`<div style="font-size:20px;line-height:26px;text-align:center">${txt}</div>` });
+      trackLayer.addLayer(L.marker([first.lat, first.lng], { icon: dot('🟢') })
+        .bindTooltip(`Départ ${fmtTime(first.ts)}`));
+      trackLayer.addLayer(L.marker([last.lat, last.lng], { icon: dot('🏁') })
+        .bindTooltip(`Fin ${fmtTime(last.ts)}`));
+
+      // Arrêts
+      s.stops.forEach(st => {
+        trackLayer.addLayer(L.marker([st.lat, st.lng], { icon: dot('⏸️') })
+          .bindTooltip(`Arrêt ${st.minutes} min (${fmtTime(st.start)} → ${fmtTime(st.end)})`));
+      });
+
+      map.fitBounds(L.latLngBounds(s.points.map(p => [p.lat, p.lng])).pad(0.15));
+    } catch (e) { status.textContent = 'Erreur : ' + e.message; }
+  }
+
+  async function loadDaily() {
+    const tbody = document.getElementById('daily');
+    document.getElementById('csvBtn').href = `/dash-api/daily?date=${dateInput.value}&csv=1`;
+    const { rows } = await apiFetch(`/dash-api/daily?date=${dateInput.value}`);
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="py-4 text-slate-400">Aucune activité ce jour-là.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(r => `
+      <tr class="border-b last:border-0 hover:bg-slate-50 cursor-pointer" data-driver="${r.driver_id}">
+        <td class="py-2 pr-3 font-medium">${r.driver}</td>
+        <td class="pr-3">${r.vehicle || '<span class="text-slate-400">—</span>'}</td>
+        <td class="pr-3 text-right font-semibold">${r.distance_km}</td>
+        <td class="pr-3 text-right">${fmtDur(r.driving_min)}</td>
+        <td class="pr-3">${fmtTime(r.first_ts)} → ${fmtTime(r.last_ts)}</td>
+        <td class="pr-3 text-right">${r.stops}</td>
+        <td class="pr-3 text-right ${r.max_kmh > 60 ? 'text-red-600 font-semibold' : ''}">${r.max_kmh}</td>
+        <td class="text-right">${r.avg_kmh}</td>
+      </tr>`).join('');
+    // Clic sur une ligne → replay de ce chauffeur
+    tbody.querySelectorAll('tr[data-driver]').forEach(tr => tr.onclick = () => {
+      sel.value = tr.dataset.driver; loadTrack();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
+
+  document.getElementById('loadBtn').onclick = loadTrack;
+  dateInput.onchange = () => { loadDaily(); };
+  loadDaily();
+  if (DRIVERS.length) loadTrack();
+</script>
+{% endblock %}

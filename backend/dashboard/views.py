@@ -1,14 +1,19 @@
 """Dashboard web (staff). Pages + endpoints JSON protégés par session Django."""
+import csv
 import json
 
 from django.contrib.auth.decorators import login_required
-from django.contrib.gis.geos import GEOSGeometry
-from django.http import JsonResponse
+from django.contrib.gis.geos import GEOSGeometry, Point
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.views.decorators.http import require_http_methods
 
-from fleet.models import Alert, Appro, Assignment, Driver, Position, Route
+from fleet.models import (
+    Alert, Appro, Assignment, Driver, Event, Geofence, Position, Route,
+)
+from fleet.tracking_stats import analyze_day, day_bounds
 
 
 # ── Pages ───────────────────────────────────────────────────────────────────
@@ -34,6 +39,33 @@ def appros_view(request):
     drivers = Driver.objects.order_by("name").values("id", "name")
     return render(request, "dashboard/appros.html",
                   {"active": "appros", "drivers": list(drivers)})
+
+
+@login_required
+def history_view(request):
+    drivers = list(
+        Driver.objects.filter(active=True).select_related("vehicle")
+        .order_by("name")
+    )
+    ctx = {
+        "active": "history",
+        "drivers": [
+            {"id": d.id, "name": d.name,
+             "vehicle": d.vehicle.identifier if d.vehicle else None}
+            for d in drivers
+        ],
+    }
+    return render(request, "dashboard/history.html", ctx)
+
+
+@login_required
+def events_view(request):
+    return render(request, "dashboard/events.html", {"active": "events"})
+
+
+@login_required
+def zones_view(request):
+    return render(request, "dashboard/zones.html", {"active": "zones"})
 
 
 # ── API JSON (session staff) ────────────────────────────────────────────────
@@ -183,3 +215,128 @@ def api_appros(request):
         "difference": a.difference,
     } for a in qs[:300]]
     return JsonResponse({"appros": appros})
+
+
+# ── Tracking : replay, activité journalière, journal, zones ────────────────
+
+def _parse_day(request):
+    """Paramètre ?date=YYYY-MM-DD (défaut : aujourd'hui, fuseau projet)."""
+    return parse_date(request.GET.get("date") or "") or timezone.localdate()
+
+
+@login_required
+def api_track(request):
+    """Trajet d'un chauffeur sur une journée : points + stats + arrêts."""
+    driver = get_object_or_404(Driver, pk=request.GET.get("driver"))
+    day = _parse_day(request)
+    stats = analyze_day(driver, day, include_points=True)
+    stats["driver"] = driver.name
+    stats["vehicle"] = driver.vehicle.identifier if driver.vehicle else None
+    stats["date"] = day.isoformat()
+    return JsonResponse(stats)
+
+
+@login_required
+def api_daily(request):
+    """Activité du jour par chauffeur/véhicule. `?csv=1` → export CSV."""
+    day = _parse_day(request)
+    rows = []
+    for d in Driver.objects.filter(active=True).select_related("vehicle").order_by("name"):
+        s = analyze_day(d, day, include_points=False)
+        if not s["ping_count"]:
+            continue
+        rows.append({
+            "driver_id": d.id,
+            "driver": d.name,
+            "vehicle": d.vehicle.identifier if d.vehicle else None,
+            "distance_km": s["distance_km"],
+            "driving_min": s["driving_min"],
+            "first_ts": s["first_ts"],
+            "last_ts": s["last_ts"],
+            "stops": len(s["stops"]),
+            "max_kmh": s["max_kmh"],
+            "avg_kmh": s["avg_kmh"],
+        })
+
+    if request.GET.get("csv"):
+        resp = HttpResponse(content_type="text/csv; charset=utf-8")
+        resp["Content-Disposition"] = f'attachment; filename="activite_{day.isoformat()}.csv"'
+        w = csv.writer(resp, delimiter=";")
+        w.writerow(["Date", "Chauffeur", "Véhicule", "Distance (km)",
+                    "Conduite (min)", "Premier signal", "Dernier signal",
+                    "Arrêts", "V. max (km/h)", "V. moy (km/h)"])
+        for r in rows:
+            w.writerow([day.isoformat(), r["driver"], r["vehicle"] or "",
+                        str(r["distance_km"]).replace(".", ","), r["driving_min"],
+                        (r["first_ts"] or "")[11:16], (r["last_ts"] or "")[11:16],
+                        r["stops"], r["max_kmh"],
+                        str(r["avg_kmh"]).replace(".", ",")])
+        return resp
+
+    return JsonResponse({"date": day.isoformat(), "rows": rows})
+
+
+@login_required
+def api_events(request):
+    """Journal du jour (zones, arrêts), plus récent d'abord."""
+    day = _parse_day(request)
+    start, end = day_bounds(day)
+    qs = (
+        Event.objects.filter(started_at__gte=start, started_at__lt=end)
+        .select_related("driver", "vehicle", "geofence", "position")
+        .order_by("-started_at")
+    )
+    driver_id = request.GET.get("driver")
+    if driver_id:
+        qs = qs.filter(driver_id=driver_id)
+    events = [{
+        "id": e.id,
+        "kind": e.kind,
+        "kind_label": e.get_kind_display(),
+        "driver": e.driver.name,
+        "vehicle": e.vehicle.identifier if e.vehicle else None,
+        "zone": e.geofence.name if e.geofence else None,
+        "message": e.message,
+        "started_at": timezone.localtime(e.started_at).isoformat(),
+        "ended_at": timezone.localtime(e.ended_at).isoformat() if e.ended_at else None,
+        "minutes": round(e.duration_min) if e.duration_min is not None else None,
+        "lat": e.position.point.y if e.position else None,
+        "lng": e.position.point.x if e.position else None,
+    } for e in qs[:300]]
+    return JsonResponse({"date": day.isoformat(), "events": events})
+
+
+@login_required
+@require_http_methods(["GET", "POST"])
+def api_geofences(request):
+    if request.method == "GET":
+        zones = [{
+            "id": g.id,
+            "name": g.name,
+            "kind": g.kind,
+            "kind_label": g.get_kind_display(),
+            "lat": g.center.y,
+            "lng": g.center.x,
+            "radius_m": g.radius_m,
+        } for g in Geofence.objects.filter(active=True).order_by("name")]
+        return JsonResponse({"zones": zones})
+
+    data = json.loads(request.body or "{}")
+    try:
+        lat, lng = float(data["lat"]), float(data["lng"])
+    except (KeyError, TypeError, ValueError):
+        return JsonResponse({"detail": "lat/lng requis."}, status=400)
+    zone = Geofence.objects.create(
+        name=data.get("name") or "Zone",
+        kind=data.get("kind") or Geofence.KIND_CHANTIER,
+        center=Point(lng, lat, srid=4326),
+        radius_m=float(data.get("radius_m") or 300),
+    )
+    return JsonResponse({"id": zone.id, "status": "ok"})
+
+
+@login_required
+@require_http_methods(["DELETE"])
+def api_geofence_delete(request, zone_id):
+    get_object_or_404(Geofence, pk=zone_id).delete()
+    return JsonResponse({"status": "deleted"})

@@ -22,6 +22,9 @@
       </a>
       <nav class="flex gap-1 text-sm">
         <a href="{% url 'dashboard-map' %}"     class="px-3 py-1.5 rounded-lg {% if active == 'map' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Carte</a>
+        <a href="{% url 'dashboard-history' %}" class="px-3 py-1.5 rounded-lg {% if active == 'history' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Historique</a>
+        <a href="{% url 'dashboard-events' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'events' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Journal</a>
+        <a href="{% url 'dashboard-zones' %}"   class="px-3 py-1.5 rounded-lg {% if active == 'zones' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Zones</a>
         <a href="{% url 'dashboard-routes' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'routes' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Itinéraires</a>
         <a href="{% url 'dashboard-alerts' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'alerts' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Alertes</a>
         <a href="{% url 'dashboard-appros' %}"  class="px-3 py-1.5 rounded-lg {% if active == 'appros' %}bg-white/20 font-semibold{% else %}hover:bg-white/10{% endif %}">Appros</a>

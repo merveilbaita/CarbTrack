@@ -163,10 +163,96 @@ class Position(models.Model):
         return f"{self.driver} @ {self.recorded_at:%Y-%m-%d %H:%M}"
 
 
+class Geofence(models.Model):
+    """Zone nommée (base vie, station, chantier…) : centre + rayon en mètres.
+
+    Sert au journal d'événements : arrivée/départ détectés à l'ingestion des
+    positions, et aux arrêts (un arrêt dans une zone nommée est normal).
+    """
+
+    KIND_BASE = "base"
+    KIND_STATION = "station"
+    KIND_CHANTIER = "chantier"
+    KIND_AUTRE = "autre"
+    KIND_CHOICES = [
+        (KIND_BASE, "Base vie"),
+        (KIND_STATION, "Station carburant"),
+        (KIND_CHANTIER, "Chantier"),
+        (KIND_AUTRE, "Autre"),
+    ]
+
+    name = models.CharField("nom", max_length=120)
+    kind = models.CharField("type", max_length=16, choices=KIND_CHOICES, default=KIND_CHANTIER)
+    center = gis.PointField("centre", geography=True, srid=4326)
+    radius_m = models.FloatField("rayon (m)", default=300)
+    active = models.BooleanField("actif", default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "zone"
+        verbose_name_plural = "zones"
+
+    def __str__(self):
+        return f"{self.name} ({self.get_kind_display()})"
+
+
+class Event(models.Model):
+    """Journal d'exploitation : entrées/sorties de zone et arrêts prolongés.
+
+    Pour un arrêt, `started_at`/`ended_at` bornent la durée (`ended_at` nul =
+    arrêt en cours). Pour une entrée/sortie de zone, seul `started_at` compte.
+    """
+
+    KIND_ZONE_ENTER = "zone_enter"
+    KIND_ZONE_EXIT = "zone_exit"
+    KIND_STOP = "stop"
+    KIND_CHOICES = [
+        (KIND_ZONE_ENTER, "Arrivée en zone"),
+        (KIND_ZONE_EXIT, "Départ de zone"),
+        (KIND_STOP, "Arrêt prolongé"),
+    ]
+
+    driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name="events")
+    vehicle = models.ForeignKey(
+        Vehicle, null=True, blank=True, on_delete=models.SET_NULL, related_name="events"
+    )
+    geofence = models.ForeignKey(
+        Geofence, null=True, blank=True, on_delete=models.SET_NULL, related_name="events"
+    )
+    position = models.ForeignKey(
+        Position, null=True, blank=True, on_delete=models.SET_NULL, related_name="events"
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    message = models.CharField(max_length=255, blank=True)
+    started_at = models.DateTimeField("début")
+    ended_at = models.DateTimeField("fin", null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "événement"
+        verbose_name_plural = "événements"
+        ordering = ["-started_at"]
+        indexes = [
+            models.Index(fields=["driver", "started_at"]),
+            models.Index(fields=["kind", "started_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.get_kind_display()} — {self.driver} @ {self.started_at:%Y-%m-%d %H:%M}"
+
+    @property
+    def duration_min(self) -> float | None:
+        if self.kind != self.KIND_STOP or self.ended_at is None:
+            return None
+        return (self.ended_at - self.started_at).total_seconds() / 60
+
+
 class Alert(models.Model):
     KIND_OFF_ROUTE = "off_route"
+    KIND_SPEEDING = "speeding"
     KIND_CHOICES = [
         (KIND_OFF_ROUTE, "Sortie de couloir"),
+        (KIND_SPEEDING, "Excès de vitesse"),
     ]
 
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name="alerts")

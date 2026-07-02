@@ -21,6 +21,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .geo import evaluate_point
+from .journal import process_position
 from .models import Alert, Appro, Assignment, Driver, Position, Route, Vehicle
 from .realtime import broadcast_alert, broadcast_position
 
@@ -131,20 +132,25 @@ def ingest_positions(request):
     if not isinstance(items, list):
         return Response({"detail": "Champ 'positions' (liste) requis."}, status=400)
 
-    # État "hors couloir" précédent pour ne créer une alerte qu'à la transition.
-    last = (
-        Position.objects.filter(driver=driver)
-        .order_by("-recorded_at")
-        .values_list("off_route", flat=True)
-        .first()
-    )
-    prev_off = bool(last) if last is not None else False
+    # Position précédente : transitions hors-couloir, zones, arrêts, vitesse.
+    prev = Position.objects.filter(driver=driver).order_by("-recorded_at").first()
+    prev_off = prev.off_route if prev is not None else False
 
     results = []
     for item in sorted(items, key=lambda x: x.get("ts") or ""):
         res, pos, created = _ingest_one(driver, assignment, item)
         results.append(res)
         if created and pos is not None:
+            # Journal (zones/arrêts) + éventuelle alerte d'excès de vitesse.
+            speed_alert = process_position(driver, pos, prev)
+            if speed_alert is not None:
+                broadcast_alert({
+                    "id": speed_alert.id,
+                    "driver": driver.name,
+                    "vehicle": pos.vehicle.identifier if pos.vehicle else None,
+                    "message": speed_alert.message,
+                    "created_at": speed_alert.created_at.isoformat(),
+                })
             broadcast_position({
                 "driver_id": driver.id,
                 "driver": driver.name,
@@ -174,6 +180,7 @@ def ingest_positions(request):
                     "created_at": alert.created_at.isoformat(),
                 })
             prev_off = pos.off_route
+            prev = pos
 
     return Response({"accepted": len(results), "results": results})
 

@@ -2,7 +2,9 @@ from django import forms
 from django.contrib import admin
 from django.contrib.gis.admin import GISModelAdmin
 
-from .models import Alert, Appro, Assignment, Driver, Position, Route, Vehicle
+from .models import (
+    Alert, Appro, Assignment, Driver, Event, Geofence, Position, Route, Vehicle,
+)
 
 
 class DriverAdminForm(forms.ModelForm):
@@ -72,6 +74,18 @@ class PositionAdmin(GISModelAdmin):
 class AlertAdmin(admin.ModelAdmin):
     list_display = ("kind", "driver", "vehicle", "created_at", "acked_at")
     list_filter = ("kind", "acked_at")
+
+
+@admin.register(Geofence)
+class GeofenceAdmin(GISModelAdmin):
+    list_display = ("name", "kind", "radius_m", "active", "created_at")
+    list_filter = ("kind", "active")
+
+
+@admin.register(Event)
+class EventAdmin(admin.ModelAdmin):
+    list_display = ("kind", "driver", "vehicle", "geofence", "started_at", "ended_at")
+    list_filter = ("kind", "driver", "geofence")
 
 
 @admin.register(Appro)

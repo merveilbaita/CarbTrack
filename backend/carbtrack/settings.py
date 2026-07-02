@@ -23,6 +23,12 @@ CSRF_TRUSTED_ORIGINS = [
 if RENDER_HOST:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_HOST}")
 
+# ── Réglages métier tracking ────────────────────────────────────────────────
+# Vitesse max tolérée (km/h) avant alerte « excès de vitesse ».
+SPEED_LIMIT_KMH = float(os.environ.get("SPEED_LIMIT_KMH", "60"))
+# Durée minimale (min) pour qu'un arrêt hors zone soit journalisé.
+STOP_MIN_MINUTES = float(os.environ.get("STOP_MIN_MINUTES", "10"))
+
 INSTALLED_APPS = [
     "daphne",  # doit précéder staticfiles : runserver en mode ASGI (WebSockets)
     "django.contrib.admin",

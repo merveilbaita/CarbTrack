@@ -1,0 +1,80 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Journal{% endblock %}
+{% block head %}
+<style>#emap{height:64vh;border-radius:14px}</style>
+{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-4">
+  <div class="lg:col-span-3 space-y-3">
+    <div class="bg-white rounded-xl shadow ring-1 ring-slate-200 p-4 flex items-end gap-3">
+      <label class="text-sm">Date
+        <input id="date" type="date" class="mt-1 block border rounded-lg px-3 py-2">
+      </label>
+      <span id="count" class="text-sm text-slate-400 pb-2"></span>
+    </div>
+    <ul id="list" class="space-y-2"></ul>
+  </div>
+  <div class="lg:col-span-2">
+    <div id="emap" class="shadow ring-1 ring-slate-200"></div>
+    <p class="text-xs text-slate-500 mt-2">Cliquez un événement pour le situer sur la carte.</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const FUEL_SPOT = [0.5019144, 25.2930084];
+  const map = L.map('emap').setView(FUEL_SPOT, 13);
+  tileLayer(map);
+  const markers = L.layerGroup().addTo(map);
+
+  const dateInput = document.getElementById('date');
+  dateInput.value = new Date().toISOString().slice(0, 10);
+
+  const STYLE = {
+    zone_enter: { icon: '📍', badge: 'bg-green-100 text-green-700' },
+    zone_exit:  { icon: '🚚', badge: 'bg-sky-100 text-sky-700' },
+    stop:       { icon: '⏸️', badge: 'bg-amber/20 text-amber' },
+  };
+  const fmtTime = iso => iso ? iso.slice(11, 16) : '–';
+
+  async function load() {
+    const { events } = await apiFetch(`/dash-api/events?date=${dateInput.value}`);
+    document.getElementById('count').textContent = `${events.length} événement(s)`;
+    markers.clearLayers();
+    const ul = document.getElementById('list');
+    if (!events.length) {
+      ul.innerHTML = '<li class="text-slate-400 bg-white rounded-xl shadow ring-1 ring-slate-200 p-4">Aucun événement ce jour-là. Créez des zones (page « Zones ») pour journaliser les arrivées/départs.</li>';
+      return;
+    }
+    ul.innerHTML = events.map(e => {
+      const st = STYLE[e.kind] || STYLE.stop;
+      const dur = e.kind === 'stop'
+        ? (e.minutes != null ? ` · ${e.minutes} min` : ' · en cours')
+        : '';
+      return `
+      <li class="bg-white rounded-xl shadow ring-1 ring-slate-200 px-4 py-3 flex items-center gap-3 ${e.lat != null ? 'cursor-pointer hover:bg-slate-50' : ''}"
+          ${e.lat != null ? `data-lat="${e.lat}" data-lng="${e.lng}" data-msg="${e.message}"` : ''}>
+        <span class="text-xl">${st.icon}</span>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">${e.message}${dur}</div>
+          <div class="text-xs text-slate-500">${e.driver}${e.vehicle ? ' · ' + e.vehicle : ''}</div>
+        </div>
+        <span class="text-xs px-2 py-0.5 rounded-full ${st.badge} whitespace-nowrap">${e.kind_label}</span>
+        <span class="text-sm font-semibold text-slate-600 tabular-nums">${fmtTime(e.started_at)}</span>
+      </li>`;
+    }).join('');
+
+    ul.querySelectorAll('li[data-lat]').forEach(li => li.onclick = () => {
+      markers.clearLayers();
+      const lat = parseFloat(li.dataset.lat), lng = parseFloat(li.dataset.lng);
+      markers.addLayer(L.marker([lat, lng]).bindPopup(li.dataset.msg).openPopup());
+      map.setView([lat, lng], 15);
+    });
+  }
+
+  dateInput.onchange = load;
+  load();
+</script>
+{% endblock %}
