@@ -22,7 +22,9 @@ from rest_framework.response import Response
 
 from .geo import evaluate_point
 from .journal import process_position
-from .models import Alert, Appro, Assignment, Driver, Position, Route, Vehicle
+from .models import (
+    Alert, Appro, Assignment, Driver, Geofence, Position, Route, Vehicle,
+)
 from .realtime import broadcast_alert, broadcast_position
 
 
@@ -246,6 +248,39 @@ def create_route(request):
         "status": "ok",
         "points_bruts": len(coords),
         "points_simplifies": len(simplified.coords),
+    })
+
+
+@api_view(["POST"])
+def create_zone(request):
+    """Crée une zone (géofence) depuis le terrain : le superviseur se tient
+    sur le site et envoie sa position comme centre, avec nom/type/rayon."""
+    driver = request.user
+    if not getattr(driver, "is_supervisor", False):
+        return Response({"detail": "Réservé aux superviseurs."}, status=403)
+
+    try:
+        lat = float(request.data["lat"])
+        lng = float(request.data["lng"])
+    except (KeyError, TypeError, ValueError):
+        return Response({"detail": "lat/lng requis."}, status=400)
+
+    kind = request.data.get("kind") or Geofence.KIND_CHANTIER
+    if kind not in dict(Geofence.KIND_CHOICES):
+        kind = Geofence.KIND_AUTRE
+
+    zone = Geofence.objects.create(
+        name=request.data.get("name") or "Zone terrain",
+        kind=kind,
+        center=Point(lng, lat, srid=4326),
+        radius_m=float(request.data.get("radius_m") or 300),
+    )
+    return Response({
+        "id": zone.id,
+        "status": "ok",
+        "name": zone.name,
+        "kind": zone.kind,
+        "radius_m": zone.radius_m,
     })
 
 

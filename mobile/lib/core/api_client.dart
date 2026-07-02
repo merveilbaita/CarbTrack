@@ -153,6 +153,40 @@ class CarbTrackApi {
     return Map<String, dynamic>.from(r.data as Map);
   }
 
+  /// `POST /api/zones` — crée une zone (géofence) depuis le terrain (superviseur).
+  Future<Map<String, dynamic>> postZone({
+    required String name,
+    required String kind,
+    required double lat,
+    required double lng,
+    required double radiusM,
+  }) async {
+    try {
+      final r = await _dio.post(
+        '/api/zones',
+        data: {
+          'name': name,
+          'kind': kind,
+          'lat': lat,
+          'lng': lng,
+          'radius_m': radiusM,
+        },
+        // Même marge que postRoute : réveil possible du serveur.
+        options: Options(
+          receiveTimeout: const Duration(seconds: 90),
+          sendTimeout: const Duration(seconds: 30),
+        ),
+      );
+      if ((r.statusCode ?? 0) == 403) {
+        throw ApiException('Réservé aux superviseurs.', statusCode: 403);
+      }
+      _ensure(r);
+      return Map<String, dynamic>.from(r.data as Map);
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
   /// `GET /api/appros/recent` — derniers appros du chauffeur.
   Future<List<Map<String, dynamic>>> getRecentAppros() async {
     final r = await _dio.get('/api/appros/recent');

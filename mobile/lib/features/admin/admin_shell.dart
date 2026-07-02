@@ -5,11 +5,19 @@ import '../../core/server_config.dart';
 import '../../tracking/tracking_service.dart';
 import '../login_screen.dart';
 import 'route_recorder_screen.dart';
+import 'zone_recorder_screen.dart';
 
-/// Interface Admin (superviseur) : enregistrement des itinéraires terrain.
-class AdminShell extends StatelessWidget {
+/// Interface Admin (superviseur) : itinéraires terrain + cartographie de zones.
+class AdminShell extends StatefulWidget {
   const AdminShell({super.key, required this.config});
   final ServerConfig config;
+
+  @override
+  State<AdminShell> createState() => _AdminShellState();
+}
+
+class _AdminShellState extends State<AdminShell> {
+  int _index = 0;
 
   Future<void> _logout(BuildContext context) async {
     await TrackingService.stop();
@@ -22,6 +30,7 @@ class AdminShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final config = widget.config;
     return Scaffold(
       appBar: AppBar(
         title: const Text('CarbTrack · Admin'),
@@ -44,7 +53,31 @@ class AdminShell extends StatelessWidget {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          Expanded(child: RouteRecorderScreen(config: config)),
+          Expanded(
+            child: IndexedStack(
+              index: _index,
+              children: [
+                RouteRecorderScreen(config: config),
+                ZoneRecorderScreen(config: config),
+              ],
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (i) => setState(() => _index = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.route_outlined),
+            selectedIcon: Icon(Icons.route_rounded),
+            label: 'Itinéraire',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.add_location_alt_outlined),
+            selectedIcon: Icon(Icons.add_location_alt_rounded),
+            label: 'Zone',
+          ),
         ],
       ),
     );
