@@ -120,11 +120,32 @@ class CarbTrackApi {
     required double corridorM,
     required List<Map<String, double>> points,
   }) async {
-    final r = await _dio.post('/api/routes', data: {
-      'name': name,
-      'corridor_m': corridorM,
-      'points': points,
-    });
+    try {
+      return await _postRoute(name: name, corridorM: corridorM, points: points);
+    } on DioException catch (e) {
+      throw _wrap(e);
+    }
+  }
+
+  Future<Map<String, dynamic>> _postRoute({
+    required String name,
+    required double corridorM,
+    required List<Map<String, double>> points,
+  }) async {
+    final r = await _dio.post(
+      '/api/routes',
+      data: {
+        'name': name,
+        'corridor_m': corridorM,
+        'points': points,
+      },
+      // Timeout large : le serveur (Render free) peut mettre 30-60 s à se
+      // réveiller après inactivité, bien au-delà des défauts du client.
+      options: Options(
+        receiveTimeout: const Duration(seconds: 90),
+        sendTimeout: const Duration(seconds: 30),
+      ),
+    );
     if ((r.statusCode ?? 0) == 403) {
       throw ApiException('Réservé aux superviseurs.', statusCode: 403);
     }
@@ -151,7 +172,7 @@ class CarbTrackApi {
       DioExceptionType.connectionTimeout ||
       DioExceptionType.receiveTimeout ||
       DioExceptionType.sendTimeout =>
-        'Délai dépassé — serveur joignable ?',
+        'Serveur lent à répondre (réveil en cours ?). Réessayez dans une minute.',
       DioExceptionType.connectionError =>
         'Connexion impossible — vérifiez le réseau / l\'adresse du serveur.',
       _ => e.message ?? 'Erreur réseau.',

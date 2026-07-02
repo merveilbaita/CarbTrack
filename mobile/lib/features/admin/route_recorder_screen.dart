@@ -150,6 +150,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
     );
 
     if (saved != true) return;
+    if (mounted) setState(() => _working = true);
     try {
       final api = CarbTrackApi(baseUrl: widget.config.baseUrl, token: widget.config.token);
       await api.postRoute(
@@ -161,10 +162,23 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
       if (mounted) setState(() => _points = 0);
       _snack('Itinéraire envoyé ✓ (visible sur le dashboard)');
     } on ApiException catch (e) {
-      _snack('Erreur : ${e.message}');
+      _snack('${e.message} Le trajet est conservé : touchez « Renvoyer ».');
     } catch (e) {
-      _snack('Erreur : $e');
+      _snack('Erreur : $e — le trajet est conservé, touchez « Renvoyer ».');
+    } finally {
+      if (mounted) setState(() => _working = false);
     }
+  }
+
+  /// Renvoie un trajet capturé dont l'envoi a échoué (points encore en buffer).
+  Future<void> _resend() async {
+    final points = await _buffer.routePoints();
+    if (points.length < 2) {
+      await _buffer.clearRoutePoints();
+      if (mounted) setState(() => _points = 0);
+      return;
+    }
+    if (mounted) await _showSaveDialog(points);
   }
 
   @override
@@ -201,7 +215,7 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
             icon: const Icon(Icons.stop_rounded),
             label: const Text('Terminer et envoyer'),
           )
-        else
+        else ...[
           FilledButton.icon(
             onPressed: _working ? null : _start,
             icon: _working
@@ -210,6 +224,15 @@ class _RouteRecorderScreenState extends State<RouteRecorderScreen> {
                 : const Icon(Icons.play_arrow_rounded),
             label: const Text('Démarrer l\'enregistrement'),
           ),
+          if (_points >= 2) ...[
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: _working ? null : _resend,
+              icon: const Icon(Icons.send_rounded),
+              label: Text('Renvoyer le trajet capturé ($_points points)'),
+            ),
+          ],
+        ],
         const SizedBox(height: 16),
         Text(
           'Roulez de la base vie jusqu\'au chantier. L\'app enregistre le tracé '
