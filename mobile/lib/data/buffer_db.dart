@@ -7,7 +7,8 @@ class BufferDb {
   Database? _db;
 
   Future<void> open() async {
-    if (_db != null) return;
+    if (_db != null && _db!.isOpen) return;
+    _db = null;
     final dir = await getDatabasesPath();
     _db = await openDatabase(
       p.join(dir, 'carbtrack_buffer.db'),

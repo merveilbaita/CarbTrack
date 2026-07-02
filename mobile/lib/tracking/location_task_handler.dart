@@ -126,6 +126,9 @@ class LocationTaskHandler extends TaskHandler {
 
   @override
   Future<void> onDestroy(DateTime timestamp) async {
-    await _buffer.close();
+    // Ne pas fermer la base ici : sqflite partage un seul handle natif par
+    // fichier entre les isolates. Le fermer ici casserait le BufferDb encore
+    // ouvert côté UI (DatabaseException database_closed). L'OS libère le
+    // handle à la mort du processus.
   }
 }
