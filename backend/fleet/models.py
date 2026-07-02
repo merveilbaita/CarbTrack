@@ -206,10 +206,12 @@ class Event(models.Model):
     KIND_ZONE_ENTER = "zone_enter"
     KIND_ZONE_EXIT = "zone_exit"
     KIND_STOP = "stop"
+    KIND_TRIP = "trip"
     KIND_CHOICES = [
         (KIND_ZONE_ENTER, "Arrivée en zone"),
         (KIND_ZONE_EXIT, "Départ de zone"),
         (KIND_STOP, "Arrêt prolongé"),
+        (KIND_TRIP, "Trajet"),
     ]
 
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name="events")
@@ -242,7 +244,7 @@ class Event(models.Model):
 
     @property
     def duration_min(self) -> float | None:
-        if self.kind != self.KIND_STOP or self.ended_at is None:
+        if self.ended_at is None:
             return None
         return (self.ended_at - self.started_at).total_seconds() / 60
 

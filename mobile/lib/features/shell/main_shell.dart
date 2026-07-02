@@ -19,6 +19,22 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _index = 0;
 
+  @override
+  void initState() {
+    super.initState();
+    // Suivi automatique : démarre dès l'ouverture de la session chauffeur,
+    // la détection de conduite (>= 20 km/h) fait le reste dans le service.
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final started = await TrackingService.ensureStarted(widget.config);
+      if (!started && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Suivi GPS inactif : autorisez la localisation '
+              '« Toujours » (onglet Suivi).'),
+        ));
+      }
+    });
+  }
+
   Future<void> _logout() async {
     await TrackingService.stop();
     await ConfigStore.clear();

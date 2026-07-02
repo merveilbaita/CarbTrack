@@ -15,7 +15,16 @@ void startLocationCallback() {
 
 /// Capture la position à intervalle régulier, la met en file (offline-safe),
 /// puis tente de vider la file vers l'API CarbTrack. Pousse l'état vers l'UI.
+///
+/// Mode « track » hybride : la conduite (>= 20 km/h) déclenche l'envoi de
+/// chaque point pour un profil de vitesse précis ; à l'arrêt, seul un signal
+/// de présence est envoyé toutes les 5 min (économie data/batterie).
 class LocationTaskHandler extends TaskHandler {
+  static const _driveStartKmh = 20.0; // au-dessus : conduite détectée
+  static const _driveEndKmh = 8.0;    // en dessous pendant _driveEndAfter : fin
+  static const _driveEndAfter = Duration(minutes: 3);
+  static const _idleHeartbeat = Duration(minutes: 5);
+
   final BufferDb _buffer = BufferDb();
   final _uuid = const Uuid();
 
@@ -23,6 +32,10 @@ class LocationTaskHandler extends TaskHandler {
   String? _token;
   String _mode = 'track'; // 'track' (suivi) ou 'record' (enregistrement itinéraire)
   bool _busy = false;
+
+  bool _driving = false;
+  DateTime? _slowSince;   // début de la période lente (hystérésis de fin)
+  DateTime? _lastQueued;  // dernier point mis en file (cadence du heartbeat)
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
@@ -50,7 +63,20 @@ class LocationTaskHandler extends TaskHandler {
       if (_mode == 'record') {
         await _record(pos);
       } else {
-        await _capture(pos);
+        _updateDriving(pos);
+        // État courant ; _flush affinera (hors couloir / en attente) s'il envoie.
+        FlutterForegroundTask.updateService(
+          notificationTitle: _driving
+              ? 'En conduite · ${(pos.speed * 3.6).round()} km/h'
+              : 'Suivi actif · veille',
+          notificationText: _driving
+              ? 'Trajet envoyé en temps réel'
+              : 'Signal de présence toutes les 5 min',
+        );
+        if (_shouldQueue(pos)) {
+          await _capture(pos);
+          _lastQueued = DateTime.now();
+        }
         await _flush();
       }
     } catch (_) {
@@ -75,6 +101,34 @@ class LocationTaskHandler extends TaskHandler {
       'lat': pos.latitude,
       'lng': pos.longitude,
     }));
+  }
+
+  /// Machine à états conduite/arrêt, avec hystérésis pour ignorer les
+  /// ralentissements passagers (feu, barrière, croisement).
+  void _updateDriving(Position pos) {
+    final kmh = pos.speed * 3.6;
+    if (kmh >= _driveStartKmh) {
+      _driving = true;
+      _slowSince = null;
+      return;
+    }
+    if (!_driving) return;
+    if (kmh < _driveEndKmh) {
+      _slowSince ??= DateTime.now();
+      if (DateTime.now().difference(_slowSince!) >= _driveEndAfter) {
+        _driving = false;
+        _slowSince = null;
+      }
+    } else {
+      _slowSince = null; // entre 8 et 20 km/h : la conduite continue
+    }
+  }
+
+  /// En conduite : chaque point. À l'arrêt : un heartbeat toutes les 5 min.
+  bool _shouldQueue(Position pos) {
+    if (_driving) return true;
+    final last = _lastQueued;
+    return last == null || DateTime.now().difference(last) >= _idleHeartbeat;
   }
 
   Future<void> _capture(Position pos) async {

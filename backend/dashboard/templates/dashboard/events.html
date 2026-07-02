@@ -36,6 +36,7 @@
     zone_enter: { icon: '📍', badge: 'bg-green-100 text-green-700' },
     zone_exit:  { icon: '🚚', badge: 'bg-sky-100 text-sky-700' },
     stop:       { icon: '⏸️', badge: 'bg-amber/20 text-amber' },
+    trip:       { icon: '🛣️', badge: 'bg-petrol/10 text-petrol' },
   };
   const fmtTime = iso => iso ? iso.slice(11, 16) : '–';
 
@@ -50,7 +51,7 @@
     }
     ul.innerHTML = events.map(e => {
       const st = STYLE[e.kind] || STYLE.stop;
-      const dur = e.kind === 'stop'
+      const dur = (e.kind === 'stop' || e.kind === 'trip')
         ? (e.minutes != null ? ` · ${e.minutes} min` : ' · en cours')
         : '';
       return `

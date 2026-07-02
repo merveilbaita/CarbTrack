@@ -7,7 +7,8 @@ import 'location_task_handler.dart';
 
 /// Pilote le service de premier plan de suivi GPS (démarrage, permissions, arrêt).
 class TrackingService {
-  static const _trackMs = 20000;  // suivi : 1 point / 20 s
+  static const _trackMs = 10000;  // suivi : échantillon toutes les 10 s
+                                  // (l'envoi est filtré : conduite vs veille)
   static const _recordMs = 5000;  // enregistrement itinéraire : 1 point / 5 s
 
   /// Configure le canal de notification + l'intervalle du service.
@@ -97,6 +98,17 @@ class TrackingService {
       notificationText: 'Trajet en cours…',
       callback: startLocationCallback,
     );
+  }
+
+  /// Démarrage automatique à l'ouverture de l'app (session chauffeur) :
+  /// la conduite est détectée par le service, sans action du chauffeur.
+  /// Retourne false si les permissions manquent (démarrage manuel possible).
+  static Future<bool> ensureStarted(ServerConfig config) async {
+    if (await FlutterForegroundTask.isRunningService) return true;
+    final ok = await requestPermissions();
+    if (!ok) return false;
+    await start(config);
+    return true;
   }
 
   static Future<ServiceRequestResult> stop() =>

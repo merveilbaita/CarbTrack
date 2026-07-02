@@ -13,7 +13,7 @@ import math
 from django.conf import settings
 from django.contrib.gis.db.models.functions import Distance
 
-from .models import Alert, Event, Geofence
+from .models import Alert, Event, Geofence, Position
 
 # Sous ce seuil (m/s ≈ 2,9 km/h), le véhicule est considéré à l'arrêt.
 _STOP_SPEED_MS = 0.8
@@ -21,6 +21,14 @@ _STOP_SPEED_MS = 0.8
 _STOP_RADIUS_M = 60
 # Une précision GPS pire que ça rend vitesse/position trop bruitées pour décider.
 _MAX_ACCURACY_M = 50
+
+# Un trajet démarre au-dessus de ce seuil (conduite en véhicule)…
+_TRIP_START_KMH = 20.0
+# …et se termine sous ce seuil pendant au moins _TRIP_END_AFTER_S.
+_TRIP_END_KMH = 8.0
+_TRIP_END_AFTER_S = 180
+# Les « trajets » plus courts que ça sont du bruit GPS : supprimés à la clôture.
+_TRIP_MIN_KM = 0.3
 
 
 def haversine_m(lat1, lng1, lat2, lng2) -> float:
@@ -51,6 +59,7 @@ def process_position(driver, pos, prev):
     cur_zones = zones_at(pos.point)
     _zone_transitions(driver, pos, prev, cur_zones)
     _stop_tracking(driver, pos, prev, cur_zones)
+    _trip_tracking(driver, pos)
     return _speeding(driver, pos, prev)
 
 
@@ -118,6 +127,77 @@ def _stop_tracking(driver, pos, prev, cur_zones):
             kind=Event.KIND_STOP, started_at=prev.recorded_at,
             message="Arrêt en cours…",
         )
+
+
+def _trip_tracking(driver, pos):
+    """Journalise les trajets en véhicule : ouvert dès 20 km/h, clôturé après
+    3 min sous 8 km/h, avec distance et vitesses dans le message."""
+    if (pos.accuracy or 0) > _MAX_ACCURACY_M:
+        return
+    kmh = (pos.speed or 0) * 3.6
+    open_trip = (
+        Event.objects.filter(driver=driver, kind=Event.KIND_TRIP, ended_at__isnull=True)
+        .order_by("-started_at")
+        .first()
+    )
+
+    if open_trip is None:
+        if kmh >= _TRIP_START_KMH:
+            Event.objects.create(
+                driver=driver, vehicle=pos.vehicle, position=pos,
+                kind=Event.KIND_TRIP, started_at=pos.recorded_at,
+                message="Trajet en cours…",
+            )
+        return
+
+    if kmh >= _TRIP_END_KMH:
+        return
+
+    # Sous le seuil : le trajet se termine s'il n'y a plus eu de mouvement
+    # depuis _TRIP_END_AFTER_S (le dernier point rapide fait foi).
+    last_moving = (
+        Position.objects.filter(
+            driver=driver,
+            recorded_at__gte=open_trip.started_at,
+            speed__gte=_TRIP_END_KMH / 3.6,
+        )
+        .order_by("-recorded_at")
+        .first()
+    )
+    end_at = last_moving.recorded_at if last_moving else open_trip.started_at
+    if (pos.recorded_at - end_at).total_seconds() < _TRIP_END_AFTER_S:
+        return
+
+    stats = _trip_stats(driver, open_trip.started_at, end_at)
+    if stats["km"] < _TRIP_MIN_KM:
+        open_trip.delete()
+        return
+    open_trip.ended_at = end_at
+    open_trip.message = (
+        f"Trajet {stats['km']:.1f} km · moy {stats['avg_kmh']:.0f}"
+        f" · max {stats['max_kmh']:.0f} km/h"
+    )
+    open_trip.save(update_fields=["ended_at", "message"])
+
+
+def _trip_stats(driver, start, end) -> dict:
+    """Distance / vitesses d'un trajet à partir des positions stockées."""
+    pts = list(
+        Position.objects.filter(driver=driver, recorded_at__gte=start, recorded_at__lte=end)
+        .order_by("recorded_at")
+        .only("point", "recorded_at", "speed", "accuracy")
+    )
+    pts = [p for p in pts if (p.accuracy or 0) <= _MAX_ACCURACY_M]
+    dist_m = 0.0
+    max_kmh = 0.0
+    for a, b in zip(pts, pts[1:]):
+        seg = haversine_m(a.point.y, a.point.x, b.point.y, b.point.x)
+        if seg >= 15:  # filtre du bruit GPS à l'arrêt
+            dist_m += seg
+    for p in pts:
+        max_kmh = max(max_kmh, (p.speed or 0) * 3.6)
+    dur_h = max((end - start).total_seconds(), 1) / 3600
+    return {"km": dist_m / 1000, "max_kmh": max_kmh, "avg_kmh": (dist_m / 1000) / dur_h}
 
 
 def _speeding(driver, pos, prev):
