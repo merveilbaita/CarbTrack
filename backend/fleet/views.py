@@ -23,10 +23,11 @@ from rest_framework.response import Response
 from .geo import evaluate_point
 from .journal import process_position
 from .models import (
-    Alert, Appro, Assignment, Driver, Geofence, Position, Route, Vehicle,
+    Alert, Appro, Assignment, Driver, Event, Geofence, Position, Route, Vehicle,
 )
 from .presence import check_silences, resolve_silence
 from .realtime import broadcast_alert, broadcast_position
+from .tracking_stats import day_bounds
 
 
 @api_view(["GET"])
@@ -206,6 +207,37 @@ def fleet_latest(request):
     if not getattr(driver, "is_supervisor", False):
         return Response({"detail": "Réservé aux superviseurs."}, status=403)
     return Response({"positions": _latest_positions_payload()})
+
+
+@api_view(["GET"])
+def events_list(request):
+    """Journal du jour pour l'app superviseur."""
+    driver = request.user
+    if not getattr(driver, "is_supervisor", False):
+        return Response({"detail": "Réservé aux superviseurs."}, status=403)
+
+    day = parse_date(request.GET.get("date") or "") or timezone.localdate()
+    start, end = day_bounds(day)
+    qs = (
+        Event.objects.filter(started_at__gte=start, started_at__lt=end)
+        .select_related("driver", "vehicle", "geofence", "position")
+        .order_by("-started_at")
+    )
+    events = [{
+        "id": e.id,
+        "kind": e.kind,
+        "kind_label": e.get_kind_display(),
+        "driver": e.driver.name,
+        "vehicle": e.vehicle.identifier if e.vehicle else None,
+        "zone": e.geofence.name if e.geofence else None,
+        "message": e.message,
+        "started_at": timezone.localtime(e.started_at).isoformat(),
+        "ended_at": timezone.localtime(e.ended_at).isoformat() if e.ended_at else None,
+        "minutes": round(e.duration_min) if e.duration_min is not None else None,
+        "lat": e.position.point.y if e.position else None,
+        "lng": e.position.point.x if e.position else None,
+    } for e in qs[:300]]
+    return Response({"date": day.isoformat(), "events": events})
 
 
 def _latest_positions_payload():

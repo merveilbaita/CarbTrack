@@ -123,6 +123,17 @@ class CarbTrackApi {
         .toList();
   }
 
+  /// `GET /api/events?date=YYYY-MM-DD` — journal superviseur du jour.
+  Future<List<Map<String, dynamic>>> getEvents({required String date}) async {
+    final r = await _dio.get('/api/events', queryParameters: {'date': date});
+    _ensure(r);
+    final list = (r.data['events'] as List?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
   /// `POST /api/appros` — envoie un lot d'appros. Retourne les `client_id` traités.
   Future<List<String>> postAppros(List<Map<String, dynamic>> appros) async {
     final r = await _dio.post('/api/appros', data: {'appros': appros});

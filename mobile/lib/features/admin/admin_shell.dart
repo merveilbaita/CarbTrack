@@ -83,9 +83,9 @@ class _AdminShellState extends State<AdminShell> {
             label: 'Zone',
           ),
           NavigationDestination(
-            icon: Icon(Icons.support_agent_outlined),
-            selectedIcon: Icon(Icons.support_agent_rounded),
-            label: 'Dépannage',
+            icon: Icon(Icons.event_note_outlined),
+            selectedIcon: Icon(Icons.event_note_rounded),
+            label: 'Journal',
           ),
         ],
       ),
