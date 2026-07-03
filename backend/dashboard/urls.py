@@ -22,6 +22,7 @@ urlpatterns = [
     path("dash-api/alerts/<int:alert_id>/ack", views.api_alert_ack, name="dash-api-alert-ack"),
     path("dash-api/appros", views.api_appros, name="dash-api-appros"),
     path("dash-api/track", views.api_track, name="dash-api-track"),
+    path("dash-api/directions", views.api_directions, name="dash-api-directions"),
     path("dash-api/daily", views.api_daily, name="dash-api-daily"),
     path("dash-api/events", views.api_events, name="dash-api-events"),
     path("dash-api/zones", views.api_geofences, name="dash-api-zones"),

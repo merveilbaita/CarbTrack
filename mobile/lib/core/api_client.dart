@@ -20,7 +20,7 @@ class PingResult {
 /// Client de l'API CarbTrack (Django/DRF).
 class CarbTrackApi {
   CarbTrackApi({required this.baseUrl, required this.token, Dio? dio})
-      : _dio = dio ?? Dio() {
+    : _dio = dio ?? Dio() {
     _dio.options
       ..baseUrl = baseUrl
       ..connectTimeout = const Duration(seconds: 8)
@@ -44,24 +44,27 @@ class CarbTrackApi {
     required String pin,
     String? deviceId,
   }) async {
-    final dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      connectTimeout: const Duration(seconds: 8),
-      receiveTimeout: const Duration(seconds: 10),
-      validateStatus: (s) => s != null && s < 500,
-    ));
+    final dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        connectTimeout: const Duration(seconds: 8),
+        receiveTimeout: const Duration(seconds: 10),
+        validateStatus: (s) => s != null && s < 500,
+      ),
+    );
     try {
-      final r = await dio.post('/api/auth/login', data: {
-        'phone': phone,
-        'pin': pin,
-        'device_id': ?deviceId,
-      });
+      final r = await dio.post(
+        '/api/auth/login',
+        data: {'phone': phone, 'pin': pin, 'device_id': ?deviceId},
+      );
       if ((r.statusCode ?? 0) == 401) {
         throw ApiException('Téléphone ou PIN incorrect.', statusCode: 401);
       }
       if ((r.statusCode ?? 0) >= 400) {
-        throw ApiException('Erreur serveur (${r.statusCode}).',
-            statusCode: r.statusCode);
+        throw ApiException(
+          'Erreur serveur (${r.statusCode}).',
+          statusCode: r.statusCode,
+        );
       }
       return Map<String, dynamic>.from(r.data as Map);
     } on DioException catch (e) {
@@ -70,15 +73,19 @@ class CarbTrackApi {
   }
 
   /// `POST /api/positions` — envoie un batch de pings, retourne les résultats.
-  Future<List<PingResult>> postPositions(List<Map<String, dynamic>> pings) async {
+  Future<List<PingResult>> postPositions(
+    List<Map<String, dynamic>> pings,
+  ) async {
     try {
       final r = await _dio.post('/api/positions', data: {'positions': pings});
       if ((r.statusCode ?? 0) == 401) {
         throw ApiException('Token refusé.', statusCode: 401);
       }
       if ((r.statusCode ?? 0) >= 400) {
-        throw ApiException('Erreur serveur (${r.statusCode}).',
-            statusCode: r.statusCode);
+        throw ApiException(
+          'Erreur serveur (${r.statusCode}).',
+          statusCode: r.statusCode,
+        );
       }
       final data = Map<String, dynamic>.from(r.data as Map);
       final results = (data['results'] as List?) ?? const [];
@@ -99,7 +106,21 @@ class CarbTrackApi {
     final r = await _dio.get('/api/vehicles');
     _ensure(r);
     final list = (r.data['vehicles'] as List?) ?? const [];
-    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  /// `GET /api/positions/latest` — dernières positions connues de la flotte.
+  Future<List<Map<String, dynamic>>> getLatestPositions() async {
+    final r = await _dio.get('/api/positions/latest');
+    _ensure(r);
+    final list = (r.data['positions'] as List?) ?? const [];
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
   /// `POST /api/appros` — envoie un lot d'appros. Retourne les `client_id` traités.
@@ -134,11 +155,7 @@ class CarbTrackApi {
   }) async {
     final r = await _dio.post(
       '/api/routes',
-      data: {
-        'name': name,
-        'corridor_m': corridorM,
-        'points': points,
-      },
+      data: {'name': name, 'corridor_m': corridorM, 'points': points},
       // Timeout large : le serveur (Render free) peut mettre 30-60 s à se
       // réveiller après inactivité, bien au-delà des défauts du client.
       options: Options(
@@ -192,13 +209,20 @@ class CarbTrackApi {
     final r = await _dio.get('/api/appros/recent');
     _ensure(r);
     final list = (r.data['appros'] as List?) ?? const [];
-    return list.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+    return list
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
   }
 
   void _ensure(Response r) {
     final code = r.statusCode ?? 0;
-    if (code == 401) throw ApiException('Token refusé.', statusCode: 401);
-    if (code >= 400) throw ApiException('Erreur serveur ($code).', statusCode: code);
+    if (code == 401) {
+      throw ApiException('Token refusé.', statusCode: 401);
+    }
+    if (code >= 400) {
+      throw ApiException('Erreur serveur ($code).', statusCode: code);
+    }
   }
 
   static ApiException _wrap(DioException e) {

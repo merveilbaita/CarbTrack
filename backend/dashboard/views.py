@@ -1,6 +1,10 @@
 """Dashboard web (staff). Pages + endpoints JSON protégés par session Django."""
 import csv
 import json
+import math
+import urllib.error
+import urllib.parse
+import urllib.request
 
 from django.contrib.auth.decorators import login_required
 from django.contrib.gis.geos import GEOSGeometry, Point
@@ -242,6 +246,62 @@ def api_track(request):
     stats["vehicle"] = driver.vehicle.identifier if driver.vehicle else None
     stats["date"] = day.isoformat()
     return JsonResponse(stats)
+
+
+def _float_param(request, name):
+    try:
+        value = float(request.GET[name])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError(f"{name} requis.")
+    if not math.isfinite(value):
+        raise ValueError(f"{name} invalide.")
+    return value
+
+
+@login_required
+def api_directions(request):
+    """Calcule un itinéraire routier entre la position actuelle et une cible.
+
+    Utilise OSRM public, sans clé API. En cas d'indisponibilité du routeur, le
+    client garde la destination et peut ouvrir Google Maps.
+    """
+    try:
+        origin_lat = _float_param(request, "origin_lat")
+        origin_lng = _float_param(request, "origin_lng")
+        dest_lat = _float_param(request, "dest_lat")
+        dest_lng = _float_param(request, "dest_lng")
+    except ValueError as exc:
+        return JsonResponse({"detail": str(exc)}, status=400)
+
+    coords = f"{origin_lng},{origin_lat};{dest_lng},{dest_lat}"
+    query = urllib.parse.urlencode({
+        "overview": "full",
+        "geometries": "geojson",
+        "steps": "false",
+    })
+    url = f"https://router.project-osrm.org/route/v1/driving/{coords}?{query}"
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "CarbTrack/1.0"})
+        with urllib.request.urlopen(req, timeout=12) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return JsonResponse({
+            "status": "fallback",
+            "detail": f"Calcul routier indisponible: {exc}",
+        }, status=502)
+
+    routes = payload.get("routes") or []
+    if not routes:
+        return JsonResponse({"status": "fallback", "detail": "Aucun trajet trouve."}, status=404)
+
+    route = routes[0]
+    return JsonResponse({
+        "status": "ok",
+        "distance_m": route.get("distance"),
+        "duration_s": route.get("duration"),
+        "geometry": route.get("geometry"),
+    })
 
 
 @login_required
