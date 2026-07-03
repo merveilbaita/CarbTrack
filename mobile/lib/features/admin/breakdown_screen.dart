@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/api_client.dart';
 import '../../core/server_config.dart';
+import 'event_map_screen.dart';
 
 /// Journal superviseur : événements du dashboard + navigation dépannage.
 class BreakdownScreen extends StatefulWidget {
@@ -63,23 +63,13 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
     await _loadEvents();
   }
 
-  Future<void> _startNavigation(Map<String, dynamic> event) async {
+  void _openMap(Map<String, dynamic> event) {
     final lat = (event['lat'] as num?)?.toDouble();
     final lng = (event['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;
-
-    final navUri = Uri.parse('google.navigation:q=$lat,$lng&mode=d');
-    if (await canLaunchUrl(navUri)) {
-      await launchUrl(navUri, mode: LaunchMode.externalApplication);
-      return;
-    }
-
-    final webUri = Uri.https('www.google.com', '/maps/dir/', {
-      'api': '1',
-      'destination': '$lat,$lng',
-      'travelmode': 'driving',
-    });
-    await launchUrl(webUri, mode: LaunchMode.externalApplication);
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => EventMapScreen(event: event)));
   }
 
   IconData _iconFor(String kind) => switch (kind) {
@@ -186,48 +176,90 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
             final kind = '${e['kind']}';
             final color = _colorFor(cs, kind);
             return Card(
-              margin: const EdgeInsets.only(bottom: 10),
+              margin: const EdgeInsets.only(bottom: 12),
               child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Row(
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(_iconFor(kind), color: color),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _message(e),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodyMedium
-                                ?.copyWith(fontWeight: FontWeight.w600),
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            _subtitle(e),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(
-                              context,
-                            ).textTheme.bodySmall?.copyWith(color: cs.outline),
+                          child: Icon(_iconFor(kind), color: color, size: 22),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _message(e),
+                                maxLines: 3,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodyLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                _subtitle(e),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall
+                                    ?.copyWith(color: cs.outline),
+                              ),
+                            ],
                           ),
-                          const SizedBox(height: 3),
-                          Text(
-                            '${e['kind_label']} · ${_time(e['started_at'] as String?)}',
-                            style: Theme.of(
-                              context,
-                            ).textTheme.labelSmall?.copyWith(color: color),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    FilledButton.tonalIcon(
-                      onPressed: hasPosition ? () => _startNavigation(e) : null,
-                      icon: const Icon(Icons.navigation_rounded),
-                      label: const Text('Démarrer'),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _MetaChip(
+                          icon: Icons.label_rounded,
+                          label: '${e['kind_label']}',
+                          color: color,
+                        ),
+                        _MetaChip(
+                          icon: Icons.schedule_rounded,
+                          label: _time(e['started_at'] as String?),
+                          color: cs.outline,
+                        ),
+                        if (hasPosition)
+                          _MetaChip(
+                            icon: Icons.location_on_rounded,
+                            label: 'Position disponible',
+                            color: cs.primary,
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: hasPosition ? () => _openMap(e) : null,
+                            icon: const Icon(Icons.map_rounded),
+                            label: const Text('Voir la carte'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(
+                          hasPosition
+                              ? Icons.chevron_right_rounded
+                              : Icons.location_off_rounded,
+                          color: hasPosition ? cs.outline : cs.error,
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -235,6 +267,48 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
             );
           }),
       ],
+    );
+  }
+}
+
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 5),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 170),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
