@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../core/api_client.dart';
 import '../../core/server_config.dart';
@@ -14,13 +17,20 @@ class BreakdownScreen extends StatefulWidget {
 }
 
 class _BreakdownScreenState extends State<BreakdownScreen> {
+  static const _offlineKey = 'carbtrack_last_breakdown_event';
+  static const _storage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
+
   late DateTime _day = DateTime.now();
   bool _loading = false;
   List<Map<String, dynamic>> _events = const [];
+  Map<String, dynamic>? _offlineEvent;
 
   @override
   void initState() {
     super.initState();
+    _loadOfflineEvent();
     _loadEvents();
   }
 
@@ -51,6 +61,22 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
     }
   }
 
+  Future<void> _loadOfflineEvent() async {
+    final raw = await _storage.read(key: _offlineKey);
+    if (raw == null || raw.isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw) as Map<String, dynamic>;
+      if (mounted) setState(() => _offlineEvent = decoded);
+    } catch (_) {
+      await _storage.delete(key: _offlineKey);
+    }
+  }
+
+  Future<void> _saveOfflineEvent(Map<String, dynamic> event) async {
+    await _storage.write(key: _offlineKey, value: jsonEncode(event));
+    if (mounted) setState(() => _offlineEvent = event);
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -63,10 +89,12 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
     await _loadEvents();
   }
 
-  void _openMap(Map<String, dynamic> event) {
+  Future<void> _openMap(Map<String, dynamic> event) async {
     final lat = (event['lat'] as num?)?.toDouble();
     final lng = (event['lng'] as num?)?.toDouble();
     if (lat == null || lng == null) return;
+    await _saveOfflineEvent(event);
+    if (!mounted) return;
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (_) => EventMapScreen(event: event)));
@@ -155,6 +183,13 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
           ).textTheme.bodySmall?.copyWith(color: cs.outline),
         ),
         const SizedBox(height: 12),
+        if (_offlineEvent != null) ...[
+          _OfflineDestinationCard(
+            event: _offlineEvent!,
+            onOpen: () => _openMap(_offlineEvent!),
+          ),
+          const SizedBox(height: 12),
+        ],
         if (_events.isEmpty)
           Container(
             padding: const EdgeInsets.all(16),
@@ -306,6 +341,82 @@ class _MetaChip extends StatelessWidget {
                 fontWeight: FontWeight.w700,
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _OfflineDestinationCard extends StatelessWidget {
+  const _OfflineDestinationCard({required this.event, required this.onOpen});
+
+  final Map<String, dynamic> event;
+  final VoidCallback onOpen;
+
+  String _time(String? iso) {
+    if (iso == null || iso.length < 16) return '--:--';
+    return iso.substring(11, 16);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final vehicle = event['vehicle'];
+    final zone = event['zone'];
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: cs.primaryContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: cs.primary.withValues(alpha: 0.18)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.offline_pin_rounded, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Dernière destination sauvegardée',
+                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: cs.primary,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '${event['message'] ?? event['kind_label'] ?? 'Événement'}',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            [
+              '${event['driver']}',
+              if (vehicle != null) '$vehicle',
+              if (zone != null) '$zone',
+              _time(event['started_at'] as String?),
+            ].join(' · '),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.map_rounded),
+            label: const Text('Rouvrir la carte'),
           ),
         ],
       ),
