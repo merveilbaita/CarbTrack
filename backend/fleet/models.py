@@ -259,10 +259,12 @@ class Alert(models.Model):
     KIND_OFF_ROUTE = "off_route"
     KIND_SPEEDING = "speeding"
     KIND_RED_ZONE = "red_zone"
+    KIND_SILENCE = "silence"
     KIND_CHOICES = [
         (KIND_OFF_ROUTE, "Sortie de couloir"),
         (KIND_SPEEDING, "Excès de vitesse"),
         (KIND_RED_ZONE, "Entrée en zone rouge"),
+        (KIND_SILENCE, "Silence GPS"),
     ]
 
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name="alerts")

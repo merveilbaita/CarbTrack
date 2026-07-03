@@ -25,6 +25,7 @@ from .journal import process_position
 from .models import (
     Alert, Appro, Assignment, Driver, Geofence, Position, Route, Vehicle,
 )
+from .presence import check_silences, resolve_silence
 from .realtime import broadcast_alert, broadcast_position
 
 
@@ -182,6 +183,10 @@ def ingest_positions(request):
                 })
             prev_off = pos.off_route
             prev = pos
+
+    if any(r.get("status") == "ok" for r in results):
+        resolve_silence(driver)   # signal revenu : clôt l'alerte de silence
+    check_silences()              # et vérifie les autres chauffeurs (anti-rebond 60 s)
 
     return Response({"accepted": len(results), "results": results})
 

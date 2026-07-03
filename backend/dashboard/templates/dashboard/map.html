@@ -35,10 +35,26 @@
   const routeLayer = L.layerGroup().addTo(map);
   let fitted = false;
 
-  function dot(off) {
+  // Statut de présence : vert = émet, orange = silencieux, gris = hors ligne.
+  const ONLINE_MAX_MIN = 7, OFFLINE_AFTER_MIN = 60;
+  function ageMin(p) { return (Date.now() - new Date(p.recorded_at).getTime()) / 60000; }
+  function statusOf(p) {
+    const a = ageMin(p);
+    return a <= ONLINE_MAX_MIN ? 'online' : a <= OFFLINE_AFTER_MIN ? 'silent' : 'offline';
+  }
+  const STATUS_COLOR = { online: '#22c55e', silent: '#f59e0b', offline: '#9ca3af' };
+  function ageLabel(p) {
+    const a = ageMin(p);
+    if (a < 1.5) return 'à l\'instant';
+    if (a < 90) return `il y a ${Math.round(a)} min`;
+    return `il y a ${Math.round(a / 60)} h`;
+  }
+
+  function dot(p) {
+    const color = p.off_route ? '#ef4444' : STATUS_COLOR[statusOf(p)];
     return L.divIcon({ className: '', iconSize:[16,16], iconAnchor:[8,8],
       html:`<div style="width:16px;height:16px;border-radius:9999px;border:2px solid #fff;
-        box-shadow:0 0 0 1px rgba(0,0,0,.25);background:${off?'#ef4444':'#22c55e'}"></div>` });
+        box-shadow:0 0 0 1px rgba(0,0,0,.25);background:${color}"></div>` });
   }
 
   function setBadge() {
@@ -60,15 +76,19 @@
     const bounds = [];
     Object.values(positions).forEach(p => {
       const ll = [p.lat, p.lng]; bounds.push(ll);
-      if (markers[p.driver_id]) markers[p.driver_id].setLatLng(ll).setIcon(dot(p.off_route));
-      else markers[p.driver_id] = L.marker(ll, { icon: dot(p.off_route) }).addTo(map);
+      const st = statusOf(p);
+      if (markers[p.driver_id]) markers[p.driver_id].setLatLng(ll).setIcon(dot(p));
+      else markers[p.driver_id] = L.marker(ll, { icon: dot(p) }).addTo(map);
       markers[p.driver_id].bindTooltip(`${p.driver}${p.vehicle?' · '+p.vehicle:''}`+
-        (p.off_route?` ⚠️ ${Math.round(p.dist_m)} m`:''));
+        ` — ${ageLabel(p)}` + (p.off_route?` ⚠️ ${Math.round(p.dist_m)} m`:''));
+      const liDot = p.off_route ? 'bg-red-500'
+        : st === 'online' ? 'bg-green-500' : st === 'silent' ? 'bg-amber-500' : 'bg-slate-400';
       const li = document.createElement('li');
-      li.className = 'px-4 py-2 flex items-center gap-2';
-      li.innerHTML = `<span class="h-2.5 w-2.5 rounded-full ${p.off_route?'bg-red-500':'bg-green-500'}"></span>`+
+      li.className = 'px-4 py-2 flex items-center gap-2' + (st === 'offline' ? ' opacity-60' : '');
+      li.innerHTML = `<span class="h-2.5 w-2.5 rounded-full ${liDot}"></span>`+
         `<span class="flex-1 truncate">${p.driver}${p.vehicle?' · '+p.vehicle:''}</span>`+
-        (p.off_route?`<span class="text-xs font-medium text-red-600">${Math.round(p.dist_m)} m</span>`:'');
+        (p.off_route?`<span class="text-xs font-medium text-red-600">${Math.round(p.dist_m)} m</span>`
+                    :`<span class="text-xs text-slate-400 whitespace-nowrap">${ageLabel(p)}</span>`);
       list.appendChild(li);
     });
     if (!Object.keys(positions).length) list.innerHTML = '<li class="px-4 py-3 text-slate-400">Aucune position</li>';
@@ -126,5 +146,7 @@
   loadRoutes(); loadInitial(); connectWS();
   // Repli : resynchronise l'état complet toutes les 30 s (au cas où le WS manque un message).
   setInterval(loadInitial, 30000);
+  // Vieillit les statuts (vert → orange → gris) même sans nouveau message.
+  setInterval(render, 60000);
 </script>
 {% endblock %}

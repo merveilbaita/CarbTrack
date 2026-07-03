@@ -13,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 from fleet.models import (
     Alert, Appro, Assignment, Driver, Event, Geofence, Position, Route,
 )
+from fleet.presence import check_silences, status_for
 from fleet.tracking_stats import analyze_day, day_bounds
 
 
@@ -72,7 +73,11 @@ def zones_view(request):
 
 @login_required
 def api_latest(request):
-    """Dernière position de chaque chauffeur + compteur d'alertes ouvertes."""
+    """Dernière position de chaque chauffeur (+ statut de présence)
+    + compteur d'alertes ouvertes. Déclenche aussi la vérification des
+    silences GPS (anti-rebond côté presence)."""
+    check_silences()
+    now = timezone.now()
     latest = {}
     qs = (
         Position.objects.select_related("driver", "vehicle")
@@ -81,6 +86,7 @@ def api_latest(request):
     for pos in qs:
         if pos.driver_id in latest:
             continue
+        age_min = (now - pos.recorded_at).total_seconds() / 60
         latest[pos.driver_id] = {
             "driver_id": pos.driver_id,
             "driver": pos.driver.name,
@@ -90,6 +96,8 @@ def api_latest(request):
             "recorded_at": pos.recorded_at.isoformat(),
             "off_route": pos.off_route,
             "dist_m": pos.dist_m,
+            "age_min": round(age_min),
+            "status": status_for(age_min),
         }
     open_alerts = Alert.objects.filter(acked_at__isnull=True).count()
     return JsonResponse({"positions": list(latest.values()), "open_alerts": open_alerts})
