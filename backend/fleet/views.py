@@ -196,6 +196,20 @@ def ingest_positions(request):
 @permission_classes([AllowAny])
 def positions_latest(request):
     """Dernière position de chaque chauffeur (pour le polling de la carte)."""
+    return Response({"positions": _latest_positions_payload()})
+
+
+@api_view(["GET"])
+def fleet_latest(request):
+    """Dernières positions de la flotte, réservé aux superviseurs de l'app."""
+    driver = request.user
+    if not getattr(driver, "is_supervisor", False):
+        return Response({"detail": "Réservé aux superviseurs."}, status=403)
+    return Response({"positions": _latest_positions_payload()})
+
+
+def _latest_positions_payload():
+    """Dernière position de chaque chauffeur."""
     latest = {}
     qs = (
         Position.objects.select_related("driver", "vehicle")
@@ -214,7 +228,7 @@ def positions_latest(request):
             "off_route": pos.off_route,
             "dist_m": pos.dist_m,
         }
-    return Response({"positions": list(latest.values())})
+    return list(latest.values())
 
 
 # ── Enregistrement d'itinéraire (superviseur, depuis l'app) ────────────────

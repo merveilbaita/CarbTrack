@@ -4,6 +4,7 @@ import '../../core/config_store.dart';
 import '../../core/server_config.dart';
 import '../../tracking/tracking_service.dart';
 import '../login_screen.dart';
+import 'breakdown_screen.dart';
 import 'route_recorder_screen.dart';
 import 'zone_recorder_screen.dart';
 
@@ -23,9 +24,9 @@ class _AdminShellState extends State<AdminShell> {
     await TrackingService.stop();
     await ConfigStore.clear();
     if (!context.mounted) return;
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+    Navigator.of(
+      context,
+    ).pushReplacement(MaterialPageRoute(builder: (_) => const LoginScreen()));
   }
 
   @override
@@ -46,7 +47,9 @@ class _AdminShellState extends State<AdminShell> {
         children: [
           Container(
             width: double.infinity,
-            color: Theme.of(context).colorScheme.secondary.withValues(alpha: 0.12),
+            color: Theme.of(
+              context,
+            ).colorScheme.secondary.withValues(alpha: 0.12),
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Text(
               'Superviseur : ${config.driverName.isEmpty ? config.host : config.driverName}',
@@ -59,6 +62,7 @@ class _AdminShellState extends State<AdminShell> {
               children: [
                 RouteRecorderScreen(config: config),
                 ZoneRecorderScreen(config: config),
+                BreakdownScreen(config: config),
               ],
             ),
           ),
@@ -77,6 +81,11 @@ class _AdminShellState extends State<AdminShell> {
             icon: Icon(Icons.add_location_alt_outlined),
             selectedIcon: Icon(Icons.add_location_alt_rounded),
             label: 'Zone',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.support_agent_outlined),
+            selectedIcon: Icon(Icons.support_agent_rounded),
+            label: 'Dépannage',
           ),
         ],
       ),

@@ -112,9 +112,9 @@ class CarbTrackApi {
         .toList();
   }
 
-  /// `GET /api/positions/latest` — dernières positions connues de la flotte.
+  /// `GET /api/fleet/latest` — dernières positions de la flotte (superviseur).
   Future<List<Map<String, dynamic>>> getLatestPositions() async {
-    final r = await _dio.get('/api/positions/latest');
+    final r = await _dio.get('/api/fleet/latest');
     _ensure(r);
     final list = (r.data['positions'] as List?) ?? const [];
     return list
