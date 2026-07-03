@@ -19,6 +19,7 @@ class _ZoneRecorderScreenState extends State<ZoneRecorderScreen> {
     ('chantier', 'Chantier', Icons.construction_rounded),
     ('base', 'Base vie', Icons.home_work_rounded),
     ('station', 'Station carburant', Icons.local_gas_station_rounded),
+    ('rouge', 'Zone rouge 🚫', Icons.block_rounded),
     ('autre', 'Autre', Icons.place_rounded),
   ];
 

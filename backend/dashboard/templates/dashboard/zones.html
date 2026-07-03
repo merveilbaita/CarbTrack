@@ -21,6 +21,7 @@
           <option value="chantier">Chantier</option>
           <option value="base">Base vie</option>
           <option value="station">Station carburant</option>
+          <option value="rouge">🚫 Zone rouge (interdite — alerte à l'entrée)</option>
           <option value="autre">Autre</option>
         </select>
       </label>
@@ -48,7 +49,7 @@
   tileLayer(map);
   const existing = L.layerGroup().addTo(map);
 
-  const KIND_ICON = { base: '🏕️', station: '⛽', chantier: '🏗️', autre: '📌' };
+  const KIND_ICON = { base: '🏕️', station: '⛽', chantier: '🏗️', rouge: '🚫', autre: '📌' };
   const saveBtn = document.getElementById('saveBtn');
   const hint = document.getElementById('hint');
   const radiusInput = document.getElementById('zradius');
@@ -92,9 +93,12 @@
     if (!zones.length) { ul.innerHTML = '<li class="text-slate-400">Aucune zone. Les événements « arrivée/départ » démarreront dès la première zone.</li>'; return; }
 
     zones.forEach(z => {
+      const red = z.kind === 'rouge';
       existing.addLayer(L.circle([z.lat, z.lng], {
-        radius: z.radius_m, color: '#0E4C5B', fillOpacity: .12,
-      }).bindTooltip(`${KIND_ICON[z.kind] || '📌'} ${z.name} · ${Math.round(z.radius_m)} m`));
+        radius: z.radius_m, color: red ? '#dc2626' : '#0E4C5B',
+        fillColor: red ? '#dc2626' : undefined, fillOpacity: red ? .18 : .12,
+        dashArray: red ? '8 6' : null,
+      }).bindTooltip(`${KIND_ICON[z.kind] || '📌'} ${z.name} · ${Math.round(z.radius_m)} m${red ? ' — INTERDITE' : ''}`));
 
       const li = document.createElement('li');
       li.className = 'bg-slate-50 rounded-lg px-3 py-2 flex items-center justify-between gap-2';

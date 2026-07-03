@@ -143,15 +143,14 @@ def ingest_positions(request):
         res, pos, created = _ingest_one(driver, assignment, item)
         results.append(res)
         if created and pos is not None:
-            # Journal (zones/arrêts) + éventuelle alerte d'excès de vitesse.
-            speed_alert = process_position(driver, pos, prev)
-            if speed_alert is not None:
+            # Journal (zones/arrêts/trajets) + alertes vitesse / zone rouge.
+            for journal_alert in process_position(driver, pos, prev):
                 broadcast_alert({
-                    "id": speed_alert.id,
+                    "id": journal_alert.id,
                     "driver": driver.name,
                     "vehicle": pos.vehicle.identifier if pos.vehicle else None,
-                    "message": speed_alert.message,
-                    "created_at": speed_alert.created_at.isoformat(),
+                    "message": journal_alert.message,
+                    "created_at": journal_alert.created_at.isoformat(),
                 })
             broadcast_position({
                 "driver_id": driver.id,

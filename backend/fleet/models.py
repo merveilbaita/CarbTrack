@@ -173,13 +173,19 @@ class Geofence(models.Model):
     KIND_BASE = "base"
     KIND_STATION = "station"
     KIND_CHANTIER = "chantier"
+    KIND_RED = "rouge"
     KIND_AUTRE = "autre"
     KIND_CHOICES = [
         (KIND_BASE, "Base vie"),
         (KIND_STATION, "Station carburant"),
         (KIND_CHANTIER, "Chantier"),
+        (KIND_RED, "Zone rouge (interdite)"),
         (KIND_AUTRE, "Autre"),
     ]
+
+    @property
+    def is_red(self) -> bool:
+        return self.kind == self.KIND_RED
 
     name = models.CharField("nom", max_length=120)
     kind = models.CharField("type", max_length=16, choices=KIND_CHOICES, default=KIND_CHANTIER)
@@ -252,9 +258,11 @@ class Event(models.Model):
 class Alert(models.Model):
     KIND_OFF_ROUTE = "off_route"
     KIND_SPEEDING = "speeding"
+    KIND_RED_ZONE = "red_zone"
     KIND_CHOICES = [
         (KIND_OFF_ROUTE, "Sortie de couloir"),
         (KIND_SPEEDING, "Excès de vitesse"),
+        (KIND_RED_ZONE, "Entrée en zone rouge"),
     ]
 
     driver = models.ForeignKey(Driver, on_delete=models.CASCADE, related_name="alerts")

@@ -52,18 +52,24 @@ def zones_at(point) -> dict:
 
 
 def process_position(driver, pos, prev):
-    """Met à jour le journal pour `pos`. Retourne une Alert à diffuser, ou None.
+    """Met à jour le journal pour `pos`. Retourne les Alerts à diffuser.
 
     `prev` est la Position précédente du chauffeur (ou None).
     """
+    alerts = []
     cur_zones = zones_at(pos.point)
-    _zone_transitions(driver, pos, prev, cur_zones)
+    alerts += _zone_transitions(driver, pos, prev, cur_zones)
     _stop_tracking(driver, pos, prev, cur_zones)
     _trip_tracking(driver, pos)
-    return _speeding(driver, pos, prev)
+    speeding = _speeding(driver, pos, prev)
+    if speeding is not None:
+        alerts.append(speeding)
+    return alerts
 
 
 def _zone_transitions(driver, pos, prev, cur_zones):
+    """Journalise entrées/sorties ; l'entrée en zone rouge lève une alerte."""
+    alerts = []
     prev_zones = zones_at(prev.point) if prev is not None else {}
     for pk, gf in cur_zones.items():
         if pk not in prev_zones:
@@ -72,6 +78,12 @@ def _zone_transitions(driver, pos, prev, cur_zones):
                 kind=Event.KIND_ZONE_ENTER, started_at=pos.recorded_at,
                 message=f"Arrivé à {gf.name}",
             )
+            if gf.is_red:
+                alerts.append(Alert.objects.create(
+                    driver=driver, vehicle=pos.vehicle, position=pos,
+                    kind=Alert.KIND_RED_ZONE,
+                    message=f"🚫 Entrée en zone rouge « {gf.name} »",
+                ))
     for pk, gf in prev_zones.items():
         if pk not in cur_zones:
             Event.objects.create(
@@ -79,6 +91,7 @@ def _zone_transitions(driver, pos, prev, cur_zones):
                 kind=Event.KIND_ZONE_EXIT, started_at=pos.recorded_at,
                 message=f"Quitté {gf.name}",
             )
+    return alerts
 
 
 def _stop_tracking(driver, pos, prev, cur_zones):
