@@ -7,6 +7,7 @@ urlpatterns = [
     path("auth/login", views.login, name="api-login"),
     path("positions", views.ingest_positions, name="api-positions"),
     path("positions/latest", views.positions_latest, name="api-positions-latest"),
+    path("admin/summary", views.admin_summary, name="api-admin-summary"),
     path("fleet/latest", views.fleet_latest, name="api-fleet-latest"),
     path("events", views.events_list, name="api-events"),
     path("events/<int:event_id>/intervention", views.event_intervention, name="api-event-intervention"),

@@ -134,6 +134,16 @@ class CarbTrackApi {
         .toList();
   }
 
+  /// `GET /api/admin/summary` — résumé opérationnel superviseur.
+  Future<Map<String, dynamic>> getAdminSummary({required String date}) async {
+    final r = await _dio.get(
+      '/api/admin/summary',
+      queryParameters: {'date': date},
+    );
+    _ensure(r);
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
   /// `POST /api/events/:id/intervention` — démarre ou récupère l'intervention active.
   Future<Map<String, dynamic>?> startIntervention(int eventId) async {
     final r = await _dio.post('/api/events/$eventId/intervention');

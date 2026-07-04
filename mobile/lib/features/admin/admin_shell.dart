@@ -4,6 +4,7 @@ import '../../core/config_store.dart';
 import '../../core/server_config.dart';
 import '../../tracking/tracking_service.dart';
 import '../login_screen.dart';
+import 'admin_dashboard_screen.dart';
 import 'admin_notifications.dart';
 import 'breakdown_screen.dart';
 import 'route_recorder_screen.dart';
@@ -75,6 +76,7 @@ class _AdminShellState extends State<AdminShell> {
             child: IndexedStack(
               index: _index,
               children: [
+                AdminDashboardScreen(config: config),
                 RouteRecorderScreen(config: config),
                 ZoneRecorderScreen(config: config),
                 BreakdownScreen(config: config),
@@ -87,6 +89,11 @@ class _AdminShellState extends State<AdminShell> {
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
         destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard_rounded),
+            label: 'Accueil',
+          ),
           NavigationDestination(
             icon: Icon(Icons.route_outlined),
             selectedIcon: Icon(Icons.route_rounded),

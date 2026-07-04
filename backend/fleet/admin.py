@@ -20,7 +20,7 @@ class DriverAdminForm(forms.ModelForm):
 
     class Meta:
         model = Driver
-        fields = ("name", "phone", "vehicle", "role", "active")
+        fields = ("name", "phone", "whatsapp_phone", "emergency_phone", "vehicle", "role", "active")
 
     def save(self, commit=True):
         driver = super().save(commit=False)
@@ -35,11 +35,14 @@ class DriverAdminForm(forms.ModelForm):
 @admin.register(Driver)
 class DriverAdmin(admin.ModelAdmin):
     form = DriverAdminForm
-    list_display = ("name", "phone", "role", "vehicle", "has_pin", "active", "created_at")
+    list_display = ("name", "phone", "whatsapp_phone", "emergency_phone", "role", "vehicle", "has_pin", "active", "created_at")
     list_filter = ("role", "active", "vehicle")
-    search_fields = ("name", "phone")
+    search_fields = ("name", "phone", "whatsapp_phone", "emergency_phone")
     readonly_fields = ("auth_token", "created_at")
-    fields = ("name", "phone", "vehicle", "role", "pin", "active", "auth_token", "created_at")
+    fields = (
+        "name", "phone", "whatsapp_phone", "emergency_phone", "vehicle",
+        "role", "pin", "active", "auth_token", "created_at",
+    )
 
     @admin.display(boolean=True, description="PIN défini")
     def has_pin(self, obj):

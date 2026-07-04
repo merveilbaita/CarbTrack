@@ -21,6 +21,8 @@ class Driver(models.Model):
 
     name = models.CharField("nom", max_length=120)
     phone = models.CharField("téléphone", max_length=32, unique=True)
+    whatsapp_phone = models.CharField("WhatsApp", max_length=32, blank=True)
+    emergency_phone = models.CharField("contact urgence", max_length=32, blank=True)
     device_id = models.CharField("identifiant appareil", max_length=120, blank=True)
     pin_hash = models.CharField(max_length=256, blank=True)
     auth_token = models.CharField(max_length=64, unique=True, default=generate_token)

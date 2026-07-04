@@ -31,7 +31,7 @@ from .journal import process_position
 from .models import (
     Alert, Appro, Assignment, Driver, Event, Geofence, Intervention, Position, Route, Vehicle,
 )
-from .presence import check_silences, resolve_silence
+from .presence import check_silences, resolve_silence, status_for
 from .realtime import broadcast_alert, broadcast_position
 from .tracking_stats import day_bounds
 
@@ -243,6 +243,8 @@ def events_list(request):
         "kind_label": e.get_kind_display(),
         "driver": e.driver.name,
         "driver_phone": e.driver.phone,
+        "driver_whatsapp": e.driver.whatsapp_phone,
+        "driver_emergency_phone": e.driver.emergency_phone,
         "vehicle": e.vehicle.identifier if e.vehicle else None,
         "zone": e.geofence.name if e.geofence else None,
         "message": e.message,
@@ -254,6 +256,72 @@ def events_list(request):
         "intervention": active_interventions.get(e.id),
     } for e in qs[:300]]
     return Response({"date": day.isoformat(), "events": events})
+
+
+@api_view(["GET"])
+def admin_summary(request):
+    """Résumé opérationnel pour l'accueil admin mobile."""
+    supervisor, denied = _supervisor_or_403(request)
+    if denied is not None:
+        return denied
+
+    now = timezone.now()
+    day = parse_date(request.GET.get("date") or "") or timezone.localdate()
+    start, end = day_bounds(day)
+
+    latest = _latest_positions_payload()
+    status_counts = {"online": 0, "silent": 0, "offline": 0}
+    for item in latest:
+        recorded_at = parse_datetime(item.get("recorded_at") or "")
+        age_min = (
+            (now - recorded_at).total_seconds() / 60
+            if recorded_at is not None else None
+        )
+        status_counts[status_for(age_min)] += 1
+
+    active_interventions = [
+        _intervention_payload(i)
+        for i in Intervention.objects.filter(
+            status__in=[Intervention.STATUS_EN_ROUTE, Intervention.STATUS_ARRIVED]
+        ).select_related("event", "supervisor")[:20]
+    ]
+    critical_events = list(
+        Event.objects.filter(started_at__gte=start, started_at__lt=end)
+        .filter(kind__in=[Event.KIND_STOP, Event.KIND_ZONE_ENTER])
+        .select_related("driver", "vehicle", "geofence", "position")
+        .order_by("-started_at")[:10]
+    )
+    critical_payload = [{
+        "id": e.id,
+        "kind": e.kind,
+        "kind_label": e.get_kind_display(),
+        "driver": e.driver.name,
+        "vehicle": e.vehicle.identifier if e.vehicle else None,
+        "message": e.message,
+        "started_at": timezone.localtime(e.started_at).isoformat(),
+    } for e in critical_events]
+
+    return Response({
+        "date": day.isoformat(),
+        "supervisor": supervisor.name,
+        "fleet": {
+            "tracked": len(latest),
+            "online": status_counts["online"],
+            "silent": status_counts["silent"],
+            "offline": status_counts["offline"],
+        },
+        "alerts": {
+            "open": Alert.objects.filter(acked_at__isnull=True).count(),
+        },
+        "interventions": {
+            "active": len(active_interventions),
+            "items": active_interventions,
+        },
+        "events": {
+            "today": Event.objects.filter(started_at__gte=start, started_at__lt=end).count(),
+            "critical": critical_payload,
+        },
+    })
 
 
 def _supervisor_or_403(request):

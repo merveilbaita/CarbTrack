@@ -163,13 +163,19 @@ class _EventMapScreenState extends State<EventMapScreen> {
     await launchUrl(webUri, mode: LaunchMode.externalApplication);
   }
 
-  Future<void> _callDriver() async {
-    final phone = '${widget.event['driver_phone'] ?? ''}'.trim();
+  Future<void> _callPhone(String phone) async {
     if (phone.isEmpty) return;
     final uri = Uri(scheme: 'tel', path: phone);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
+  }
+
+  Future<void> _openWhatsapp(String phone) async {
+    final cleaned = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleaned.isEmpty) return;
+    final uri = Uri.https('wa.me', '/${cleaned.replaceFirst('+', '')}');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   Future<void> _startIntervention() async {
@@ -299,6 +305,9 @@ class _EventMapScreenState extends State<EventMapScreen> {
     final zone = widget.event['zone'];
     final admin = _adminPoint;
     final driverPhone = '${widget.event['driver_phone'] ?? ''}'.trim();
+    final whatsapp = '${widget.event['driver_whatsapp'] ?? ''}'.trim();
+    final emergencyPhone = '${widget.event['driver_emergency_phone'] ?? ''}'
+        .trim();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Position événement'),
@@ -413,14 +422,13 @@ class _EventMapScreenState extends State<EventMapScreen> {
                     onDone: () => _setInterventionStatus('done'),
                   ),
                   const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: driverPhone.isEmpty ? null : _callDriver,
-                    icon: const Icon(Icons.call_rounded),
-                    label: Text(
-                      driverPhone.isEmpty
-                          ? 'Téléphone indisponible'
-                          : 'Appeler ${widget.event['driver']}',
-                    ),
+                  _ContactActions(
+                    driverName: '${widget.event['driver']}',
+                    phone: driverPhone,
+                    whatsapp: whatsapp,
+                    emergencyPhone: emergencyPhone,
+                    onCall: _callPhone,
+                    onWhatsapp: _openWhatsapp,
                   ),
                   const SizedBox(height: 10),
                   FilledButton.icon(
@@ -434,6 +442,64 @@ class _EventMapScreenState extends State<EventMapScreen> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ContactActions extends StatelessWidget {
+  const _ContactActions({
+    required this.driverName,
+    required this.phone,
+    required this.whatsapp,
+    required this.emergencyPhone,
+    required this.onCall,
+    required this.onWhatsapp,
+  });
+
+  final String driverName;
+  final String phone;
+  final String whatsapp;
+  final String emergencyPhone;
+  final ValueChanged<String> onCall;
+  final ValueChanged<String> onWhatsapp;
+
+  @override
+  Widget build(BuildContext context) {
+    final hasAny =
+        phone.isNotEmpty || whatsapp.isNotEmpty || emergencyPhone.isNotEmpty;
+    if (!hasAny) {
+      return OutlinedButton.icon(
+        onPressed: null,
+        icon: const Icon(Icons.call_rounded),
+        label: const Text('Téléphone indisponible'),
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (phone.isNotEmpty)
+          OutlinedButton.icon(
+            onPressed: () => onCall(phone),
+            icon: const Icon(Icons.call_rounded),
+            label: Text('Appeler $driverName'),
+          ),
+        if (whatsapp.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => onWhatsapp(whatsapp),
+            icon: const Icon(Icons.chat_rounded),
+            label: const Text('WhatsApp conducteur'),
+          ),
+        ],
+        if (emergencyPhone.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () => onCall(emergencyPhone),
+            icon: const Icon(Icons.emergency_rounded),
+            label: const Text('Contact urgence'),
+          ),
+        ],
+      ],
     );
   }
 }
