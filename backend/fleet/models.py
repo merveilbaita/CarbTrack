@@ -296,10 +296,12 @@ class Intervention(models.Model):
     STATUS_EN_ROUTE = "en_route"
     STATUS_ARRIVED = "arrived"
     STATUS_DONE = "done"
+    STATUS_CANCELED = "canceled"
     STATUS_CHOICES = [
         (STATUS_EN_ROUTE, "En route"),
         (STATUS_ARRIVED, "Arrivé"),
-        (STATUS_DONE, "Terminé"),
+        (STATUS_DONE, "Réglé"),
+        (STATUS_CANCELED, "Annulé"),
     ]
 
     event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="interventions")

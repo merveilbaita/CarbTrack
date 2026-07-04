@@ -398,6 +398,10 @@ def intervention_status(request, intervention_id):
         intervention.status = Intervention.STATUS_DONE
         intervention.ended_at = intervention.ended_at or now
         intervention.save(update_fields=["status", "ended_at"])
+    elif new_status == Intervention.STATUS_CANCELED:
+        intervention.status = Intervention.STATUS_CANCELED
+        intervention.ended_at = intervention.ended_at or now
+        intervention.save(update_fields=["status", "ended_at"])
     else:
         return Response({"detail": "Statut invalide."}, status=400)
     return Response({"intervention": _intervention_payload(intervention)})

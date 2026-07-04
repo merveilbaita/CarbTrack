@@ -420,6 +420,7 @@ class _EventMapScreenState extends State<EventMapScreen> {
                     onStart: _startIntervention,
                     onArrived: () => _setInterventionStatus('arrived'),
                     onDone: () => _setInterventionStatus('done'),
+                    onCancel: () => _setInterventionStatus('canceled'),
                   ),
                   const SizedBox(height: 10),
                   _ContactActions(
@@ -570,6 +571,7 @@ class _InterventionPanel extends StatelessWidget {
     required this.onStart,
     required this.onArrived,
     required this.onDone,
+    required this.onCancel,
   });
 
   final Map<String, dynamic>? intervention;
@@ -577,6 +579,7 @@ class _InterventionPanel extends StatelessWidget {
   final VoidCallback onStart;
   final VoidCallback onArrived;
   final VoidCallback onDone;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -619,35 +622,43 @@ class _InterventionPanel extends StatelessWidget {
                   : const Icon(Icons.play_arrow_rounded),
               label: const Text('Démarrer intervention'),
             )
-          else if (status == 'en_route')
-            Row(
+          else if (status == 'en_route' || status == 'arrived')
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: FilledButton.tonalIcon(
+                if (status == 'en_route')
+                  FilledButton.tonalIcon(
                     onPressed: working ? null : onArrived,
                     icon: const Icon(Icons.flag_rounded),
-                    label: const Text('Arrivé'),
+                    label: const Text('Marquer arrivé'),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: working ? null : onDone,
-                    icon: const Icon(Icons.check_rounded),
-                    label: const Text('Terminer'),
-                  ),
+                if (status == 'en_route') const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: working ? null : onDone,
+                        icon: const Icon(Icons.check_circle_rounded),
+                        label: const Text('Réglé'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: working ? null : onCancel,
+                        icon: const Icon(Icons.cancel_rounded),
+                        label: const Text('Annuler'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             )
-          else if (status == 'arrived')
-            FilledButton.icon(
-              onPressed: working ? null : onDone,
-              icon: const Icon(Icons.check_rounded),
-              label: const Text('Terminer intervention'),
-            )
           else
             Text(
-              'Intervention terminée',
+              status == 'canceled'
+                  ? 'Intervention annulée'
+                  : 'Intervention réglée',
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: cs.outline,
                 fontWeight: FontWeight.w700,
