@@ -298,6 +298,7 @@ class _EventMapScreenState extends State<EventMapScreen> {
     final vehicle = widget.event['vehicle'];
     final zone = widget.event['zone'];
     final admin = _adminPoint;
+    final driverPhone = '${widget.event['driver_phone'] ?? ''}'.trim();
     return Scaffold(
       appBar: AppBar(
         title: const Text('Position événement'),
@@ -412,12 +413,15 @@ class _EventMapScreenState extends State<EventMapScreen> {
                     onDone: () => _setInterventionStatus('done'),
                   ),
                   const SizedBox(height: 10),
-                  if ('${widget.event['driver_phone'] ?? ''}'.trim().isNotEmpty)
-                    OutlinedButton.icon(
-                      onPressed: _callDriver,
-                      icon: const Icon(Icons.call_rounded),
-                      label: Text('Appeler ${widget.event['driver']}'),
+                  OutlinedButton.icon(
+                    onPressed: driverPhone.isEmpty ? null : _callDriver,
+                    icon: const Icon(Icons.call_rounded),
+                    label: Text(
+                      driverPhone.isEmpty
+                          ? 'Téléphone indisponible'
+                          : 'Appeler ${widget.event['driver']}',
                     ),
+                  ),
                   const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _startNavigation,
