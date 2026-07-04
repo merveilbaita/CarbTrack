@@ -95,9 +95,11 @@ class _BreakdownScreenState extends State<BreakdownScreen> {
     if (lat == null || lng == null) return;
     await _saveOfflineEvent(event);
     if (!mounted) return;
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => EventMapScreen(event: event)));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EventMapScreen(config: widget.config, event: event),
+      ),
+    );
   }
 
   IconData _iconFor(String kind) => switch (kind) {

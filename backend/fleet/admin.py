@@ -3,7 +3,7 @@ from django.contrib import admin
 from django.contrib.gis.admin import GISModelAdmin
 
 from .models import (
-    Alert, Appro, Assignment, Driver, Event, Geofence, Position, Route, Vehicle,
+    Alert, Appro, Assignment, Driver, Event, Geofence, Intervention, Position, Route, Vehicle,
 )
 
 
@@ -86,6 +86,12 @@ class GeofenceAdmin(GISModelAdmin):
 class EventAdmin(admin.ModelAdmin):
     list_display = ("kind", "driver", "vehicle", "geofence", "started_at", "ended_at")
     list_filter = ("kind", "driver", "geofence")
+
+
+@admin.register(Intervention)
+class InterventionAdmin(admin.ModelAdmin):
+    list_display = ("event", "supervisor", "status", "started_at", "arrived_at", "ended_at")
+    list_filter = ("status", "supervisor")
 
 
 @admin.register(Appro)

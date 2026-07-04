@@ -7,6 +7,12 @@
 (*) `latest` est ouvert en v1 pour le polling du dashboard interne ; à sécuriser
     (session staff / token dashboard) avant exposition publique.
 """
+import json
+import math
+import urllib.error
+import urllib.parse
+import urllib.request
+
 from django.contrib.gis.geos import LineString, Point
 from django.db.models import Max
 from django.utils.dateparse import parse_date, parse_datetime
@@ -23,7 +29,7 @@ from rest_framework.response import Response
 from .geo import evaluate_point
 from .journal import process_position
 from .models import (
-    Alert, Appro, Assignment, Driver, Event, Geofence, Position, Route, Vehicle,
+    Alert, Appro, Assignment, Driver, Event, Geofence, Intervention, Position, Route, Vehicle,
 )
 from .presence import check_silences, resolve_silence
 from .realtime import broadcast_alert, broadcast_position
@@ -223,11 +229,20 @@ def events_list(request):
         .select_related("driver", "vehicle", "geofence", "position")
         .order_by("-started_at")
     )
+    event_ids = list(qs.values_list("id", flat=True)[:300])
+    active_interventions = {
+        i.event_id: _intervention_payload(i)
+        for i in Intervention.objects.filter(
+            event_id__in=event_ids,
+            status__in=[Intervention.STATUS_EN_ROUTE, Intervention.STATUS_ARRIVED],
+        ).select_related("supervisor")
+    }
     events = [{
         "id": e.id,
         "kind": e.kind,
         "kind_label": e.get_kind_display(),
         "driver": e.driver.name,
+        "driver_phone": e.driver.phone,
         "vehicle": e.vehicle.identifier if e.vehicle else None,
         "zone": e.geofence.name if e.geofence else None,
         "message": e.message,
@@ -236,8 +251,138 @@ def events_list(request):
         "minutes": round(e.duration_min) if e.duration_min is not None else None,
         "lat": e.position.point.y if e.position else None,
         "lng": e.position.point.x if e.position else None,
+        "intervention": active_interventions.get(e.id),
     } for e in qs[:300]]
     return Response({"date": day.isoformat(), "events": events})
+
+
+def _supervisor_or_403(request):
+    driver = request.user
+    if not getattr(driver, "is_supervisor", False):
+        return None, Response({"detail": "Réservé aux superviseurs."}, status=403)
+    return driver, None
+
+
+def _intervention_payload(intervention):
+    return {
+        "id": intervention.id,
+        "event_id": intervention.event_id,
+        "status": intervention.status,
+        "status_label": intervention.get_status_display(),
+        "supervisor": intervention.supervisor.name,
+        "started_at": timezone.localtime(intervention.started_at).isoformat(),
+        "arrived_at": (
+            timezone.localtime(intervention.arrived_at).isoformat()
+            if intervention.arrived_at else None
+        ),
+        "ended_at": (
+            timezone.localtime(intervention.ended_at).isoformat()
+            if intervention.ended_at else None
+        ),
+    }
+
+
+@api_view(["GET", "POST"])
+def event_intervention(request, event_id):
+    """Crée ou retourne l'intervention active liée à un événement."""
+    supervisor, denied = _supervisor_or_403(request)
+    if denied is not None:
+        return denied
+
+    event = Event.objects.filter(pk=event_id).first()
+    if event is None:
+        return Response({"detail": "Événement introuvable."}, status=404)
+
+    intervention = (
+        Intervention.objects.filter(
+            event=event,
+            status__in=[Intervention.STATUS_EN_ROUTE, Intervention.STATUS_ARRIVED],
+        )
+        .select_related("supervisor")
+        .order_by("-started_at")
+        .first()
+    )
+    if intervention is None and request.method == "POST":
+        intervention = Intervention.objects.create(event=event, supervisor=supervisor)
+    if intervention is None:
+        return Response({"intervention": None})
+    return Response({"intervention": _intervention_payload(intervention)})
+
+
+@api_view(["POST"])
+def intervention_status(request, intervention_id):
+    """Met à jour le statut d'une intervention."""
+    _supervisor, denied = _supervisor_or_403(request)
+    if denied is not None:
+        return denied
+
+    intervention = Intervention.objects.filter(pk=intervention_id).select_related("supervisor").first()
+    if intervention is None:
+        return Response({"detail": "Intervention introuvable."}, status=404)
+
+    new_status = request.data.get("status")
+    now = timezone.now()
+    if new_status == Intervention.STATUS_ARRIVED:
+        intervention.status = Intervention.STATUS_ARRIVED
+        intervention.arrived_at = intervention.arrived_at or now
+        intervention.save(update_fields=["status", "arrived_at"])
+    elif new_status == Intervention.STATUS_DONE:
+        intervention.status = Intervention.STATUS_DONE
+        intervention.ended_at = intervention.ended_at or now
+        intervention.save(update_fields=["status", "ended_at"])
+    else:
+        return Response({"detail": "Statut invalide."}, status=400)
+    return Response({"intervention": _intervention_payload(intervention)})
+
+
+def _float_param(request, name):
+    try:
+        value = float(request.GET[name])
+    except (KeyError, TypeError, ValueError):
+        raise ValueError(f"{name} requis.")
+    if not math.isfinite(value):
+        raise ValueError(f"{name} invalide.")
+    return value
+
+
+@api_view(["GET"])
+def directions(request):
+    """Trajet routier OSRM pour l'app superviseur."""
+    _supervisor, denied = _supervisor_or_403(request)
+    if denied is not None:
+        return denied
+    try:
+        origin_lat = _float_param(request, "origin_lat")
+        origin_lng = _float_param(request, "origin_lng")
+        dest_lat = _float_param(request, "dest_lat")
+        dest_lng = _float_param(request, "dest_lng")
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=400)
+
+    coords = f"{origin_lng},{origin_lat};{dest_lng},{dest_lat}"
+    query = urllib.parse.urlencode({
+        "overview": "full",
+        "geometries": "geojson",
+        "steps": "false",
+    })
+    url = f"https://router.project-osrm.org/route/v1/driving/{coords}?{query}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "CarbTrack/1.0"})
+        with urllib.request.urlopen(req, timeout=12) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return Response({"status": "fallback", "detail": str(exc)}, status=502)
+
+    routes = payload.get("routes") or []
+    if not routes:
+        return Response({"status": "fallback", "detail": "Aucun trajet trouvé."}, status=404)
+    route = routes[0]
+    return Response({
+        "status": "ok",
+        "distance_m": route.get("distance"),
+        "duration_s": route.get("duration"),
+        "geometry": route.get("geometry"),
+    })
 
 
 def _latest_positions_payload():

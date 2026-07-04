@@ -5,10 +5,14 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../core/api_client.dart';
+import '../../core/server_config.dart';
+
 /// Carte de détail d'un événement du journal, avant navigation terrain.
 class EventMapScreen extends StatefulWidget {
-  const EventMapScreen({super.key, required this.event});
+  const EventMapScreen({super.key, required this.config, required this.event});
 
+  final ServerConfig config;
   final Map<String, dynamic> event;
 
   @override
@@ -24,8 +28,14 @@ class _EventMapScreenState extends State<EventMapScreen> {
 
   final _mapController = MapController();
   LatLng? _adminPoint;
+  List<LatLng> _routePoints = const [];
+  double? _routeDistanceM;
+  double? _routeDurationS;
   bool _locating = true;
+  bool _loadingRoute = false;
+  bool _workingIntervention = false;
   String? _locationError;
+  Map<String, dynamic>? _intervention;
   String _adminAvatar = 'supervisor';
   String _eventAvatar = 'truck';
 
@@ -36,6 +46,10 @@ class _EventMapScreenState extends State<EventMapScreen> {
   @override
   void initState() {
     super.initState();
+    final intervention = widget.event['intervention'];
+    if (intervention is Map) {
+      _intervention = Map<String, dynamic>.from(intervention);
+    }
     _loadAvatarPrefs();
     _loadAdminPosition();
   }
@@ -74,6 +88,7 @@ class _EventMapScreenState extends State<EventMapScreen> {
       final point = LatLng(pos.latitude, pos.longitude);
       if (!mounted) return;
       setState(() => _adminPoint = point);
+      await _loadRoadRoute(point);
       WidgetsBinding.instance.addPostFrameCallback((_) => _fitRoute());
     } catch (e) {
       if (mounted) {
@@ -88,13 +103,49 @@ class _EventMapScreenState extends State<EventMapScreen> {
 
   void _fitRoute() {
     final admin = _adminPoint;
-    if (admin == null) return;
+    final points = _routePoints.isNotEmpty
+        ? _routePoints
+        : [?admin, _eventPoint];
+    if (points.length < 2) return;
     _mapController.fitCamera(
       CameraFit.bounds(
-        bounds: LatLngBounds.fromPoints([admin, _eventPoint]),
+        bounds: LatLngBounds.fromPoints(points),
         padding: const EdgeInsets.all(58),
       ),
     );
+  }
+
+  Future<void> _loadRoadRoute(LatLng admin) async {
+    setState(() => _loadingRoute = true);
+    try {
+      final api = CarbTrackApi(
+        baseUrl: widget.config.baseUrl,
+        token: widget.config.token,
+      );
+      final data = await api.getDirections(
+        originLat: admin.latitude,
+        originLng: admin.longitude,
+        destLat: _lat,
+        destLng: _lng,
+      );
+      final geometry = data['geometry'];
+      final coords = geometry is Map ? geometry['coordinates'] : null;
+      final route = coords is List
+          ? coords.whereType<List>().map((p) {
+              return LatLng((p[1] as num).toDouble(), (p[0] as num).toDouble());
+            }).toList()
+          : <LatLng>[];
+      if (!mounted) return;
+      setState(() {
+        _routePoints = route;
+        _routeDistanceM = (data['distance_m'] as num?)?.toDouble();
+        _routeDurationS = (data['duration_s'] as num?)?.toDouble();
+      });
+    } catch (_) {
+      if (mounted) setState(() => _routePoints = const []);
+    } finally {
+      if (mounted) setState(() => _loadingRoute = false);
+    }
   }
 
   Future<void> _startNavigation() async {
@@ -110,6 +161,49 @@ class _EventMapScreenState extends State<EventMapScreen> {
       'travelmode': 'driving',
     });
     await launchUrl(webUri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _callDriver() async {
+    final phone = '${widget.event['driver_phone'] ?? ''}'.trim();
+    if (phone.isEmpty) return;
+    final uri = Uri(scheme: 'tel', path: phone);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  Future<void> _startIntervention() async {
+    setState(() => _workingIntervention = true);
+    try {
+      final api = CarbTrackApi(
+        baseUrl: widget.config.baseUrl,
+        token: widget.config.token,
+      );
+      final id = (widget.event['id'] as num).toInt();
+      final intervention = await api.startIntervention(id);
+      if (mounted) setState(() => _intervention = intervention);
+    } finally {
+      if (mounted) setState(() => _workingIntervention = false);
+    }
+  }
+
+  Future<void> _setInterventionStatus(String status) async {
+    final interventionId = (_intervention?['id'] as num?)?.toInt();
+    if (interventionId == null) return;
+    setState(() => _workingIntervention = true);
+    try {
+      final api = CarbTrackApi(
+        baseUrl: widget.config.baseUrl,
+        token: widget.config.token,
+      );
+      final intervention = await api.updateInterventionStatus(
+        interventionId: interventionId,
+        status: status,
+      );
+      if (mounted) setState(() => _intervention = intervention);
+    } finally {
+      if (mounted) setState(() => _workingIntervention = false);
+    }
   }
 
   Future<void> _chooseAvatars() async {
@@ -180,6 +274,17 @@ class _EventMapScreenState extends State<EventMapScreen> {
   }
 
   String _distanceLabel() {
+    final routeDistance = _routeDistanceM;
+    final routeDuration = _routeDurationS;
+    if (routeDistance != null && routeDuration != null) {
+      final km = routeDistance / 1000;
+      final min = (routeDuration / 60).round();
+      final dist = routeDistance < 1000
+          ? '${routeDistance.round()} m'
+          : '${km.toStringAsFixed(km >= 10 ? 0 : 1)} km';
+      return _loadingRoute ? 'Calcul du trajet…' : '$dist · $min min';
+    }
+    if (_loadingRoute) return 'Calcul du trajet…';
     final admin = _adminPoint;
     if (admin == null) return 'Distance indisponible';
     final meters = const Distance().as(LengthUnit.Meter, admin, _eventPoint);
@@ -225,7 +330,9 @@ class _EventMapScreenState extends State<EventMapScreen> {
                       PolylineLayer(
                         polylines: [
                           Polyline(
-                            points: [admin, _eventPoint],
+                            points: _routePoints.isNotEmpty
+                                ? _routePoints
+                                : [admin, _eventPoint],
                             color: cs.primary,
                             strokeWidth: 4,
                           ),
@@ -297,6 +404,21 @@ class _EventMapScreenState extends State<EventMapScreen> {
                     ).textTheme.bodySmall?.copyWith(color: cs.outline),
                   ),
                   const SizedBox(height: 14),
+                  _InterventionPanel(
+                    intervention: _intervention,
+                    working: _workingIntervention,
+                    onStart: _startIntervention,
+                    onArrived: () => _setInterventionStatus('arrived'),
+                    onDone: () => _setInterventionStatus('done'),
+                  ),
+                  const SizedBox(height: 10),
+                  if ('${widget.event['driver_phone'] ?? ''}'.trim().isNotEmpty)
+                    OutlinedButton.icon(
+                      onPressed: _callDriver,
+                      icon: const Icon(Icons.call_rounded),
+                      label: Text('Appeler ${widget.event['driver']}'),
+                    ),
+                  const SizedBox(height: 10),
                   FilledButton.icon(
                     onPressed: _startNavigation,
                     icon: const Icon(Icons.navigation_rounded),
@@ -366,6 +488,102 @@ class _MapStatus extends StatelessWidget {
               TextButton(onPressed: onRetry, child: const Text('Réessayer')),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InterventionPanel extends StatelessWidget {
+  const _InterventionPanel({
+    required this.intervention,
+    required this.working,
+    required this.onStart,
+    required this.onArrived,
+    required this.onDone,
+  });
+
+  final Map<String, dynamic>? intervention;
+  final bool working;
+  final VoidCallback onStart;
+  final VoidCallback onArrived;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final status = intervention?['status'];
+    final label = intervention?['status_label'] ?? 'Aucune intervention active';
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.engineering_rounded, color: cs.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Intervention · $label',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (intervention == null)
+            FilledButton.tonalIcon(
+              onPressed: working ? null : onStart,
+              icon: working
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.play_arrow_rounded),
+              label: const Text('Démarrer intervention'),
+            )
+          else if (status == 'en_route')
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: working ? null : onArrived,
+                    icon: const Icon(Icons.flag_rounded),
+                    label: const Text('Arrivé'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: working ? null : onDone,
+                    icon: const Icon(Icons.check_rounded),
+                    label: const Text('Terminer'),
+                  ),
+                ),
+              ],
+            )
+          else if (status == 'arrived')
+            FilledButton.icon(
+              onPressed: working ? null : onDone,
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('Terminer intervention'),
+            )
+          else
+            Text(
+              'Intervention terminée',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: cs.outline,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+        ],
       ),
     );
   }

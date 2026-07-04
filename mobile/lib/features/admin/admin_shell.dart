@@ -4,6 +4,7 @@ import '../../core/config_store.dart';
 import '../../core/server_config.dart';
 import '../../tracking/tracking_service.dart';
 import '../login_screen.dart';
+import 'admin_notifications.dart';
 import 'breakdown_screen.dart';
 import 'route_recorder_screen.dart';
 import 'zone_recorder_screen.dart';
@@ -19,8 +20,22 @@ class AdminShell extends StatefulWidget {
 
 class _AdminShellState extends State<AdminShell> {
   int _index = 0;
+  AdminNotifications? _notifications;
+
+  @override
+  void initState() {
+    super.initState();
+    _notifications = AdminNotifications(widget.config)..start();
+  }
+
+  @override
+  void dispose() {
+    _notifications?.stop();
+    super.dispose();
+  }
 
   Future<void> _logout(BuildContext context) async {
+    await _notifications?.stop();
     await TrackingService.stop();
     await ConfigStore.clear();
     if (!context.mounted) return;

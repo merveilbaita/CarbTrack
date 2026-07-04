@@ -288,6 +288,42 @@ class Alert(models.Model):
         return f"{self.get_kind_display()} — {self.driver}"
 
 
+class Intervention(models.Model):
+    """Intervention terrain lancée par un superviseur depuis un événement."""
+
+    STATUS_EN_ROUTE = "en_route"
+    STATUS_ARRIVED = "arrived"
+    STATUS_DONE = "done"
+    STATUS_CHOICES = [
+        (STATUS_EN_ROUTE, "En route"),
+        (STATUS_ARRIVED, "Arrivé"),
+        (STATUS_DONE, "Terminé"),
+    ]
+
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name="interventions")
+    supervisor = models.ForeignKey(
+        Driver, on_delete=models.CASCADE, related_name="interventions"
+    )
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_EN_ROUTE)
+    started_at = models.DateTimeField(default=timezone.now)
+    arrived_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    note = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "intervention"
+        verbose_name_plural = "interventions"
+        ordering = ["-started_at"]
+        indexes = [
+            models.Index(fields=["event", "status"]),
+            models.Index(fields=["supervisor", "started_at"]),
+        ]
+
+    def __str__(self):
+        return f"Intervention {self.get_status_display()} — {self.event}"
+
+
 class Appro(models.Model):
     """Approvisionnement (prise de carburant) saisi par un chauffeur.
 

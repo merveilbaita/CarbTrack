@@ -134,6 +134,49 @@ class CarbTrackApi {
         .toList();
   }
 
+  /// `POST /api/events/:id/intervention` — démarre ou récupère l'intervention active.
+  Future<Map<String, dynamic>?> startIntervention(int eventId) async {
+    final r = await _dio.post('/api/events/$eventId/intervention');
+    _ensure(r);
+    final intervention = r.data['intervention'];
+    return intervention is Map ? Map<String, dynamic>.from(intervention) : null;
+  }
+
+  /// `POST /api/interventions/:id/status` — arrivé / terminé.
+  Future<Map<String, dynamic>?> updateInterventionStatus({
+    required int interventionId,
+    required String status,
+  }) async {
+    final r = await _dio.post(
+      '/api/interventions/$interventionId/status',
+      data: {'status': status},
+    );
+    _ensure(r);
+    final intervention = r.data['intervention'];
+    return intervention is Map ? Map<String, dynamic>.from(intervention) : null;
+  }
+
+  /// `GET /api/directions` — vrai trajet routier entre admin et événement.
+  Future<Map<String, dynamic>> getDirections({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) async {
+    final r = await _dio.get(
+      '/api/directions',
+      queryParameters: {
+        'origin_lat': originLat,
+        'origin_lng': originLng,
+        'dest_lat': destLat,
+        'dest_lng': destLng,
+      },
+      options: Options(receiveTimeout: const Duration(seconds: 30)),
+    );
+    _ensure(r);
+    return Map<String, dynamic>.from(r.data as Map);
+  }
+
   /// `POST /api/appros` — envoie un lot d'appros. Retourne les `client_id` traités.
   Future<List<String>> postAppros(List<Map<String, dynamic>> appros) async {
     final r = await _dio.post('/api/appros', data: {'appros': appros});
